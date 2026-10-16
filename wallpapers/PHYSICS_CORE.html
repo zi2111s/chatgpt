@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>PHYSICS CORE — Singularity Engine · Dynamic Wallpaper</title>
+<style>
+  :root { --cyan:#7ae9ff; --gold:#ffcb87; --white:#e6faff; }
+  * {box-sizing:border-box}
+  html,body {width:100%;height:100%;margin:0;overflow:hidden;background:#010510;color:var(--white);font-family:Inter,Segoe UI,Arial,"Microsoft YaHei",sans-serif;user-select:none}
+  canvas {position:fixed;inset:0;display:block;width:100%;height:100%}
+  #space {z-index:0} #orbits {z-index:1}
+  .filmgrain {position:fixed;inset:0;pointer-events:none;z-index:2;opacity:.13;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' opacity='.2' d='M0 0h160v160H0z'/%3E%3C/svg%3E");mix-blend-mode:screen}
+  .vignette{position:fixed;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at 58% 49%,transparent 30%,rgba(0,3,12,.06) 56%,rgba(0,2,10,.76) 100%)}
+  .decor {position:fixed;z-index:4;pointer-events:none;letter-spacing:.2em;text-shadow:0 0 14px rgba(0,180,240,.28)}
+  .top-left{left:3.4vw;top:4vh;display:flex;align-items:center;gap:13px;color:#a6d8e5;font-size:10px;font-weight:600;letter-spacing:.24em;opacity:.65}
+  .sigmark{width:27px;height:27px;border:1px solid rgba(113,226,253,.7);display:grid;place-items:center;transform:rotate(45deg);box-shadow:0 0 17px rgba(54,189,240,.16),inset 0 0 9px rgba(54,189,240,.18)}
+  .sigmark i{display:block;width:11px;height:11px;border:1px solid #f8cb88;border-radius:50%;transform:rotate(-45deg);position:relative}
+  .sigmark i:after{content:"";position:absolute;left:4px;top:-7px;height:22px;width:1px;background:linear-gradient(transparent,#b0e8ff,transparent);transform:rotate(44deg)}
+  .top-right{top:4.8vh;right:3.4vw;font:10px/1.7 Consolas,monospace;color:#8eabbf;text-align:right;letter-spacing:.17em;opacity:.48}
+  .top-right strong{color:#85cee0;font-weight:500}
+  .hero {left:5.1vw;bottom:12.3vh;max-width:42vw}
+  .pretitle{font:600 10px/1.6 Consolas,monospace;color:var(--gold);letter-spacing:.46em;margin-bottom:16px}
+  h1 {font-family:Bahnschrift,Inter,Arial,sans-serif;font-size:clamp(39px,5vw,104px);line-height:.94;letter-spacing:.105em;font-weight:200;margin:0;color:#e4f5ff;text-transform:uppercase;text-shadow:0 0 50px rgba(35,129,201,.32)}
+  h1 b{font-weight:200;color:#f6ca87;text-shadow:0 0 25px rgba(244,166,78,.35)}
+  .subline{display:flex;align-items:center;gap:14px;margin-top:23px;font-size:10px;color:#85acbe;letter-spacing:.26em;white-space:nowrap}
+  .subline:before{content:"";width:30px;height:1px;background:#dfb875;box-shadow:0 0 9px #e5b372}
+  .hero .desc{color:rgba(132,174,195,.48);letter-spacing:.17em;font:10px/2 Consolas,monospace;margin-top:15px}
+  .bottom-line{left:3.4vw;right:3.4vw;bottom:4.2vh;display:flex;justify-content:space-between;align-items:end;border-top:1px solid rgba(92,168,195,.13);padding-top:12px;font:9px/1.7 Consolas,monospace;color:rgba(118,172,197,.46);letter-spacing:.2em}
+  .bottom-line .gold{color:rgba(240,178,100,.68)}
+  .readouts{right:4vw;top:34vh;width:140px;opacity:.7;font:9px/1.9 Consolas,monospace;color:#8bb8ce;letter-spacing:.16em}
+  .readouts .rhead{color:#f6cb8d;font-weight:bold;font-size:10px;margin-bottom:17px}
+  .readouts .meter{height:2px;background:rgba(102,170,193,.16);margin:4px 0 13px}
+  .readouts .meter span{display:block;width:40%;height:100%;background:linear-gradient(90deg,#2e94c1,#9cf1ff);box-shadow:0 0 9px #62cfea;transition:width .12s linear}
+  .readouts .entry{display:flex;justify-content:space-between}
+  .edge {position:fixed;z-index:4;pointer-events:none;width:22px;height:22px;border-color:rgba(103,205,227,.17);border-style:solid}
+  .tl{left:18px;top:18px;border-width:1px 0 0 1px}.tr{right:18px;top:18px;border-width:1px 1px 0 0}.bl{left:18px;bottom:18px;border-width:0 0 1px 1px}.br{right:18px;bottom:18px;border-width:0 1px 1px 0}
+  .interface {position:fixed;z-index:10;right:28px;bottom:74px;display:flex;gap:8px;opacity:.14;transition:opacity .22s ease;transform:translateZ(0)}
+  .interface:hover,.interface:focus-within{opacity:1}
+  .interface button,.interface label{display:flex;justify-content:center;align-items:center;gap:7px;border:1px solid rgba(127,222,247,.37);color:#b8e4ed;background:rgba(1,17,31,.76);padding:10px 13px;border-radius:4px;cursor:pointer;font:10px Consolas,monospace;letter-spacing:.08em;backdrop-filter:blur(8px)}
+  .interface button:hover,.interface label:hover{background:rgba(21,84,112,.8);color:#fff}
+  .interface input{display:none}
+  .toast{position:fixed;top:9vh;left:50%;z-index:20;transform:translateX(-50%);border:1px solid #396879;background:#031b2ad9;color:#c1f3ff;padding:8px 17px;font:11px Consolas,monospace;letter-spacing:.1em;opacity:0;transition:opacity .5s;pointer-events:none}
+  @media(max-width:1000px){.hero{bottom:11vh}.readouts{display:none}.hero .desc{display:none}.top-right{font-size:9px}.bottom-line{font-size:8px}}
+  @media(max-width:600px){.hero{bottom:13vh;left:6vw;max-width:85vw}h1{font-size:11vw}.subline{white-space:normal;font-size:8px}.top-right{display:none}.bottom-line{font-size:7px;bottom:3vh}.interface{bottom:75px;right:12px}}
+  .ui-off .decor,.ui-off .edge,.ui-off .interface{display:none}
+</style>
+</head>
+<body>
+<canvas id="space"></canvas>
+<canvas id="orbits"></canvas>
+<div class="filmgrain"></div><div class="vignette"></div>
+<div class="edge tl"></div><div class="edge tr"></div><div class="edge bl"></div><div class="edge br"></div>
+<div class="decor top-left"><span class="sigmark"><i></i></span><span>AXIOM RESEARCH DIVISION&nbsp; / &nbsp; FIELD 01</span></div>
+<div class="decor top-right"><strong>QUANTUM REACTOR ARRAY</strong><br>REAL-TIME PARTICLE FIELD<br>STABILITY: <span id="stability">99.87</span>% // ONLINE</div>
+<div class="decor hero"><div class="pretitle">THE UNIVERSE IS A SYSTEM</div><h1>PHYSICS<br><b>CORE.</b></h1><div class="subline">SINGULARITY ENGINE &nbsp; // &nbsp; NO. 001</div><div class="desc">MATTER IS ENERGY &nbsp;·&nbsp; SPACE IS GEOMETRY &nbsp;·&nbsp; TIME IS MOTION</div></div>
+<div class="decor readouts"><div class="rhead">◈&nbsp; CORE TELEMETRY</div><div class="entry"><span>FLUX / BASS</span><span id="bassText">00</span></div><div class="meter"><span id="bassBar"></span></div><div class="entry"><span>FIELD / MID</span><span id="midText">00</span></div><div class="meter"><span id="midBar"></span></div><div class="entry"><span>ION / HIGH</span><span id="trebleText">00</span></div><div class="meter"><span id="trebleBar"></span></div><div class="entry"><span>MODE</span><span id="modeLabel">IDLE</span></div></div>
+<div class="decor bottom-line"><div>◉ &nbsp; P-C/001 &nbsp; ⟡ &nbsp; ORBITAL REACTOR SIMULATION</div><div><span class="gold">LIVE FIELD</span>&nbsp; / &nbsp; <span id="clock">00:00:00</span> &nbsp; / &nbsp; ∞</div></div>
+<div class="interface"><button id="demoBtn" title="模拟节拍，让你在没有音乐时预览响应效果">◈ 演示脉冲</button><label title="导入本地音频，让画面真正跟随音乐律动">♫ 本地音乐<input type="file" id="audioFile" accept="audio/*"></label><button id="hudBtn" title="隐藏或显示界面，快捷键 H">▣ HUD</button></div>
+<div class="toast" id="toast"></div>
+<audio id="player" loop></audio>
+<script>
+(() => {
+'use strict';
+// PHYSICS CORE v1.0 — single-file, offline-capable Wallpaper Engine web wallpaper.
+// Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
+const canvas=document.getElementById('space');
+const overlay=document.getElementById('orbits');
+const ctx=overlay.getContext('2d',{alpha:true});
+const gl=canvas.getContext('webgl',{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false,powerPreference:'high-performance'}) || canvas.getContext('experimental-webgl');
+const byId=id=>document.getElementById(id);
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rand=(a,b)=>a+Math.random()*(b-a);
+let W=innerWidth,H=innerHeight,D=1,CX=0,CY=0,scale=1;
+let now=0,last=0,pause=false,frame=0,hasWallpaperAudio=false,lastWallpaperAudio=-10000;
+let bass=0,mid=0,treble=0,targetBass=0,targetMid=0,targetTreble=0,demo=false,audioSource=false;
+let mouseX=0,mouseY=0,tiltX=0,tiltY=0;
+let audioCtx,analyser,srcNode,freqData;
+let toastTimer;
+function toast(str){const el=byId('toast');el.textContent=str;el.style.opacity='1';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.opacity='0',2500)}
+
+// --------------------- Procedural universe / energy reactor ---------------------
+const vertex=`attribute vec2 pos; varying vec2 v; void main(){v=pos;gl_Position=vec4(pos,0.0,1.0);}`;
+const fragment=`
+precision highp float;
+uniform vec2 res;
+uniform float time;
+uniform vec3 audio;
+uniform vec2 drift;
+varying vec2 v;
+#define PI 3.14159265359
+float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);return mix(mix(hash21(i),hash21(i+vec2(1.,0.)),f.x),mix(hash21(i+vec2(0.,1.)),hash21(i+1.),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+vec2(19.7,4.2);a*=.5;}return s;}
+float gauss(float a,float width){return exp(-a*a*width);}
+mat2 rot(float a){return mat2(cos(a),-sin(a),sin(a),cos(a));}
+void main(){
+vec2 fc=gl_FragCoord.xy;
+vec2 uv=(fc-.5*res)/min(res.x,res.y);
+vec2 p=(fc-vec2(res.x*.585,res.y*.51))/min(res.x,res.y);
+vec2 q=p;
+float r=length(p);
+float a=atan(p.y,p.x);
+float t=time;
+vec3 color=vec3(.0018,.008,.023);
+// Outer nebulae: subdued cyan / bronze, with cinematic vignetting.
+vec2 nebuv=uv*1.18;
+float cloud=fbm(nebuv*3.3+vec2(t*.008,0.0));
+float cloud2=fbm(nebuv*6.3-vec2(t*.011,t*.005));
+float leftField=gauss(length((uv-vec2(-.54,.23))*vec2(.88,1.5)),3.3);
+float rightField=gauss(length((uv-vec2(.61,-.25))*vec2(.98,1.55)),3.5);
+color += vec3(.005,.078,.13)*leftField*pow(cloud,1.45)*1.55;
+color += vec3(.12,.052,.014)*rightField*pow(cloud2,1.65)*.95;
+color += vec3(.006,.026,.053)*cloud*.4;
+// Turbulent ionization plume surrounding the core.
+float radialNoise=fbm(p*7.0+vec2(t*.035,-t*.026));
+float halo=gauss(r,.5)*.22 + gauss(r,5.2)*.12 + gauss(r,18.)*.10;
+color+=vec3(.018,.19,.27)*halo*(.6+radialNoise*.9);
+// The accretion material: several curved interacting energy bands.
+vec2 disk=rot(-.31)*p;
+float diskR=length(vec2(disk.x,disk.y*2.18));
+float spin=atan(disk.y*2.18,disk.x);
+float turb=fbm(vec2(spin*1.9+2.0, diskR*22.0-t*.32));
+float swirl=sin(spin*13.0-diskR*44.0+t*.34+3.0*turb);
+float shell=gauss(diskR-.44,65.)*(.54+.46*swirl*swirl);
+float filaments=pow(.5+.5*sin(spin*31.0-diskR*73.0+t*.25),7.0);
+float diskGlow=gauss(diskR-.42,22.0)*(.2+.9*turb)*(.65+.35*filaments);
+vec3 cool=vec3(.10,.54,1.00);
+vec3 warm=vec3(1.00,.45,.11);
+float phase=.5+.5*sin(spin*2.7+t*.18);
+color+=mix(cool,warm,phase)*shell*.47;
+color+=mix(vec3(.02,.30,.45),vec3(.55,.22,.046),phase)*diskGlow*.22;
+// Geometric outer aura and concentric flux gates.
+color+=vec3(.03,.29,.48)*gauss(r-.47,145.)*.18;
+color+=vec3(.11,.50,.67)*gauss(r-.62,340.)*.11;
+color+=vec3(.27,.59,.62)*gauss(r-.76,530.)*.07;
+float rays=pow(abs(cos(a*6.+sin(t*.15)*.2)),100.0);
+color+=vec3(.12,.55,1.0)*rays*gauss(r,14.)*.23;
+// Dark reactor body surrounded by an extremely bright containment rim.
+float body=1.0-smoothstep(.182,.196,r);
+float bodyGradient=clamp(r/.195,0.,1.);
+float lattice=(.5+.5*sin(a*30.0+t*.035+sin(r*45.)*.7));
+vec3 bodyCol=mix(vec3(.004,.014,.034),vec3(.014,.046,.083),bodyGradient);
+bodyCol+=vec3(.018,.06,.077)*pow(lattice,17.0)*smoothstep(.08,.19,r);
+color=mix(color,bodyCol,body*.985);
+float rim=gauss(r-.194,12000.) +gauss(r-.201,4300.)*.32;
+color+=vec3(.21,.78,1.10)*rim*(.68+.28*sin(a*17.-t*.25));
+// Nested moving containment coils with a central hot aperture.
+float inner=gauss(r-.134,5800.)*.42+gauss(r-.097,6500.)*.45+gauss(r-.061,12000.)*.7;
+float pulse=.84+.12*sin(t*.9)+audio.x*.75;
+color+=vec3(.05,.58,.95)*inner*pulse*body;
+float nucleus=gauss(r,380.)+gauss(r,1500.)*.78+gauss(r,4100.)*.75;
+color+=vec3(1.1,.67,.30)*nucleus*(.65+.55*audio.x);
+color+=vec3(.45,.85,1.10)*gauss(r,13500.)*.65;
+// Photon scattering and fine concentric ring inscriptions.
+float fine=pow(.5+.5*sin(a*92.+r*73.-t*.5),24.0);
+color+=vec3(.1,.53,.77)*fine*gauss(r-.23,180.)*.14;
+// Wide atmospheric volume glow, subtle filmic tonemapping.
+color+=vec3(.018,.075,.13)*gauss(r,5.5)*(.14+.15*audio.y);
+float vign=1.0-smoothstep(.25,1.6,length(uv*vec2(.83,1.1)));
+color*=mix(.27,1.0,vign);
+color=1.0-exp(-color*1.42);
+color=pow(color,vec3(.89));
+gl_FragColor=vec4(color,1.0);
+}`;
+let program,uRes,uTime,uAudio,uDrift;
+function compile(type,source){const sh=gl.createShader(type);gl.shaderSource(sh,source);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh));return sh}
+if(gl){
+ try{
+ program=gl.createProgram();gl.attachShader(program,compile(gl.VERTEX_SHADER,vertex));gl.attachShader(program,compile(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(program);
+ if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+ gl.useProgram(program);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+ const loc=gl.getAttribLocation(program,'pos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+ uRes=gl.getUniformLocation(program,'res');uTime=gl.getUniformLocation(program,'time');uAudio=gl.getUniformLocation(program,'audio');uDrift=gl.getUniformLocation(program,'drift');
+ }catch(e){console.error('WebGL compile:',e);program=null;}
+}
+function resize(){W=innerWidth;H=innerHeight;D=Math.min(devicePixelRatio||1,1.5);CX=W*.585;CY=H*.49;scale=Math.min(W,H)*.365;
+ overlay.width=Math.round(W*D);overlay.height=Math.round(H*D);overlay.style.width=W+'px';overlay.style.height=H+'px';ctx.setTransform(D,0,0,D,0,0);
+ const dgl=Math.min(devicePixelRatio||1,1.0)*Math.min(1,1440/Math.max(W,H));canvas.width=Math.round(W*dgl);canvas.height=Math.round(H*dgl);
+ if(gl)gl.viewport(0,0,canvas.width,canvas.height);
+}
+addEventListener('resize',resize);resize();
+
+// --------------------- Orbital geometry + ion particles ---------------------
+const orbitConfigs=[
+ {radius:1.04,ax:1.05,ay:.24,az:.10,color:'#66dfff',width:1.2,speed:.045},
+ {radius:1.16,ax:.16,ay:.96,az:.64,color:'#87c7f2',width:.92,speed:-.038},
+ {radius:.86,ax:.67,ay:.42,az:-.63,color:'#ffbe7b',width:1.25,speed:.080},
+ {radius:1.32,ax:.42,ay:-.52,az:.20,color:'#45a3cd',width:.55,speed:-.032},
+];
+function spin3(x,y,z,ax,ay,az){let cy=Math.cos(ay),sy=Math.sin(ay),cx=Math.cos(ax),sx=Math.sin(ax),cz=Math.cos(az),sz=Math.sin(az);
+ let x1=x*cy+z*sy,z1=-x*sy+z*cy;let y1=y*cx-z1*sx,z2=y*sx+z1*cx;return [x1*cz-y1*sz,x1*sz+y1*cz,z2];}
+function project(x,y,z){let s=3.2/(3.2+z*.38);return [CX+x*scale*s,CY+y*scale*s,z]}
+// Seeded particle field; deterministic layout on every launch.
+let seed=81321;function rng(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+const stars=Array.from({length:360},()=>({x:rng(),y:rng(),r:.3+rng()*1.3,b:rng(),phase:rng()*6.28}));
+const ions=Array.from({length:1300},(_,i)=>({r:.26+Math.pow(rng(),.55)*1.23,a:rng()*6.283,plane:(rng()-.5)*.28,size:.35+rng()*1.35,speed:(.22+rng()*.28)*(rng()>.13?1:-1),gold:rng()>.68,seed:rng()*10}));
+const sparks=Array.from({length:88},()=>({a:rng()*6.28,r:.35+rng()*1.04,ph:rng()*6.28,gold:rng()>.5}));
+function lineArc(points,color,width,alpha,blur){ctx.save();ctx.lineJoin='round';ctx.strokeStyle=color;ctx.lineWidth=width;ctx.globalAlpha=alpha;ctx.shadowColor=color;ctx.shadowBlur=blur;ctx.beginPath();for(let i=0;i<points.length;i++){let p=points[i];if(i===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);}ctx.stroke();ctx.restore()}
+function drawOrbit(o,t,front){const pts=[];const amp=1+audioStrength()*.035;
+ for(let i=0;i<=300;i++){
+  let a=i/300*Math.PI*2;
+  let [x,y,z]=spin3(Math.cos(a)*o.radius*amp,Math.sin(a)*o.radius*amp,0,o.ax,o.ay+t*o.speed,o.az);
+  let p=project(x,y,z);pts.push({p,z});
+ }
+ let run=[];function flush(){if(run.length>1)lineArc(run,o.color,o.width,front?.58:.19,front?13:4);run=[];}
+ for(let i=0;i<pts.length;i++){
+  let good=front?(pts[i].z>=0):(pts[i].z<0);
+  if(good)run.push(pts[i].p);else flush();
+ }flush();
+ // Radial markers on containment coils.
+ for(let j=0;j<40;j++){
+  let a=j/40*Math.PI*2+t*o.speed*.8;
+  let out=spin3(Math.cos(a)*o.radius,Math.sin(a)*o.radius,0,o.ax,o.ay+t*o.speed,o.az);
+  if((front&&out[2]<0)||(!front&&out[2]>=0))continue;
+  const p1=project(out[0]*.987,out[1]*.987,out[2]*.987),p2=project(out[0]*1.013,out[1]*1.013,out[2]*1.013);
+  lineArc([p1,p2],o.color,.8,(j%5===0?.58:.18)*(front?1:.5),3);
+ }
+}
+function audioStrength(){return Math.min(1,bass*.75+mid*.4+treble*.25)}
+function drawNebulaFallback(){let g=ctx.createRadialGradient(CX,CY,0,CX,CY,scale*1.8);g.addColorStop(0,'#092b49');g.addColorStop(.38,'#05152b');g.addColorStop(1,'#010510');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ let cg=ctx.createRadialGradient(CX,CY,4,CX,CY,scale*.64);cg.addColorStop(0,'#ffcc89');cg.addColorStop(.08,'#a66c41');cg.addColorStop(.32,'#041528');cg.addColorStop(.75,'#0b3355');cg.addColorStop(1,'transparent');ctx.fillStyle=cg;ctx.beginPath();ctx.arc(CX,CY,scale*.65,0,6.283);ctx.fill();}
+function drawStars(t){ctx.save();for(const s of stars){const x=s.x*W,y=s.y*H,twinkle=.38+.48*(.5+.5*Math.sin(t*(.6+s.b)+s.phase));ctx.fillStyle=s.b>.94?'rgba(255,208,150,'+twinkle+')':'rgba(126,210,239,'+(twinkle*.65)+')';ctx.beginPath();ctx.arc(x,y,s.r*(s.b>.97?1.5:1),0,6.283);ctx.fill();}ctx.restore()}
+function drawIons(t){ctx.save();ctx.globalCompositeOperation='lighter';
+ for(const p of ions){let a=p.a+t*p.speed/(.7+p.r*.7),r=p.r*(1+.013*Math.sin(t*1.5+p.seed));let z=Math.sin(a*1.7+p.seed)*p.plane;
+ let [x,y,z1]=spin3(Math.cos(a)*r,Math.sin(a)*r,z,.32,-.17,.28);
+ let v=project(x,y,z1);let dist=Math.hypot(v[0]-CX,v[1]-CY)/scale;
+ if(dist<.26)continue;
+ let aAlpha=clamp(.09+(z1+1)*.18,0,.5)*(.7+audioStrength()*.9);
+ if(p.gold){ctx.fillStyle='rgba(255,181,111,'+aAlpha+')';}else{ctx.fillStyle='rgba(78,193,253,'+aAlpha+')';}
+ let size=p.size*(.85+audioStrength()*.35);ctx.fillRect(v[0],v[1],size,size);
+ }
+ ctx.restore();}
+function drawCorona(t){ctx.save();ctx.globalCompositeOperation='lighter';
+ // High energy arcs along the boundary of the sphere, curved Bezier strips.
+ const amp=audioStrength();
+ for(let i=0;i<11;i++){
+ let a=i*6.283/11 + t*(i%2?-.042:.034);let rad=scale*(.38+.008*Math.sin(i*4+t));
+ let length=.12+.11*(.5+.5*Math.sin(i*2+t*.7));
+ ctx.strokeStyle=i%4===0?'rgba(255,183,92,.35)':'rgba(90,220,255,.27)';ctx.shadowColor=i%4===0?'#ff9d61':'#50c9ff';ctx.shadowBlur=12+20*amp;ctx.lineWidth=i%3===0?1.6:1.0;
+ ctx.beginPath();ctx.arc(CX,CY,rad,a,a+length);ctx.stroke();
+ }
+ ctx.restore();}
+function drawBeams(t){ctx.save();ctx.translate(CX,CY);ctx.rotate(-.30);
+ ctx.globalCompositeOperation='lighter';
+ const a=audioStrength();
+ for(let k=0;k<2;k++){
+ let length=scale*(1.35+.08*a),w=scale*(.26+.07*a),gg=ctx.createLinearGradient(-length,0,length,0);
+ gg.addColorStop(0,'rgba(14,81,123,0)');gg.addColorStop(.35,'rgba(30,141,201,.012)');gg.addColorStop(.5,'rgba(97,218,255,.080)');gg.addColorStop(.65,'rgba(28,147,204,.014)');gg.addColorStop(1,'rgba(7,77,120,0)');
+ ctx.fillStyle=gg;ctx.beginPath();ctx.ellipse(0,0,length,w,k?0.03:-0.03,0,6.283);ctx.fill();
+ }ctx.restore();}
+
+function drawPlasmaDisk(t){
+ ctx.save();ctx.translate(CX,CY);ctx.rotate(-.31);ctx.globalCompositeOperation='lighter';
+ let energy=audioStrength();
+ // Wide, rotating accretion stream: separate blurred cool and warm volumes.
+ for(let layer=0;layer<3;layer++){
+  let ww=scale*(.97+layer*.15),hh=scale*(.255+layer*.052);
+  const cg=ctx.createRadialGradient(0,0,scale*.13,0,0,ww);
+  if(layer===0){cg.addColorStop(0,'rgba(255,178,80,.16)');cg.addColorStop(.32,'rgba(255,155,66,.10)');cg.addColorStop(.68,'rgba(54,171,222,.075)');cg.addColorStop(1,'rgba(13,68,114,0)');}
+  else{cg.addColorStop(0,'rgba(30,125,175,.015)');cg.addColorStop(.45,'rgba(47,189,242,.055)');cg.addColorStop(.82,'rgba(53,159,226,.03)');cg.addColorStop(1,'rgba(0,45,90,0)');}
+  ctx.save();ctx.scale(1,hh/ww);ctx.fillStyle=cg;ctx.beginPath();ctx.arc(0,0,ww,0,6.283);ctx.fill();ctx.restore();
+ }
+ // Hundreds of rotating ion bands create the appearance of turbulent flow.
+ for(let i=0;i<134;i++){
+   let a=i*2.39996+t*(i%2?-.085:.14),r=scale*(.45+.60*((i*73)%139)/139);
+   let x=Math.cos(a)*r,y=Math.sin(a)*r*.31;
+   let len=2.0+(i%7)*1.8;
+   ctx.lineWidth=(i%13===0?1.6:.55);
+   ctx.strokeStyle=i%5===0?'rgba(255,185,113,.30)':'rgba(76,188,241,.20)';
+   ctx.beginPath();ctx.ellipse(0,0,r,r*.31,0,a,a+len/r);ctx.stroke();
+ }
+ ctx.restore();
+}
+function drawCoreOrnament(t){
+ let e=audioStrength();ctx.save();ctx.translate(CX,CY);
+ ctx.globalCompositeOperation='lighter';
+ // Broad volumetric glow.
+ let glow=ctx.createRadialGradient(0,0,scale*.06,0,0,scale*.69);
+ glow.addColorStop(0,'rgba(253,185,94,.34)');glow.addColorStop(.23,'rgba(67,147,215,.18)');glow.addColorStop(.48,'rgba(19,131,204,.095)');glow.addColorStop(1,'rgba(0,90,145,0)');
+ ctx.fillStyle=glow;ctx.beginPath();ctx.arc(0,0,scale*.69,0,6.283);ctx.fill();
+ // Containment shell; sharp dark interior with highly luminous electric edge.
+ const R=scale*.36;
+ const body=ctx.createRadialGradient(-R*.16,-R*.16,0,0,0,R);
+ body.addColorStop(0,'rgba(1,9,24,.42)');body.addColorStop(.39,'rgba(1,13,30,.67)');body.addColorStop(.74,'rgba(3,24,44,.89)');body.addColorStop(.93,'rgba(7,52,77,.81)');body.addColorStop(1,'rgba(18,150,201,.35)');
+ ctx.fillStyle=body;ctx.beginPath();ctx.arc(0,0,R,0,6.283);ctx.fill();
+ ctx.save();ctx.shadowColor='#4ad7ff';ctx.shadowBlur=21+10*e;ctx.strokeStyle='rgba(91,220,255,.65)';ctx.lineWidth=1.45;ctx.beginPath();ctx.arc(0,0,R,0,6.283);ctx.stroke();ctx.restore();
+ // Instrument gyroscopes etched into the inner dome.
+ for(let j=0;j<4;j++){
+   ctx.save();ctx.rotate(t*(j%2?-.07:.06)+j*.6);
+   ctx.strokeStyle=j%2===0?'rgba(61,193,234,.3)':'rgba(255,189,101,.22)';
+   ctx.lineWidth=.9;ctx.beginPath();ctx.ellipse(0,0,R*(.72+j*.055),R*(.26+j*.09),j*.62,0,6.283);ctx.stroke();ctx.restore();
+ }
+ // Radial technical engraving.
+ ctx.save();ctx.rotate(-t*.12);
+ for(let k=0;k<96;k++){
+  let a=k/96*Math.PI*2,rr=R*(k%8===0?.82:.91),rr2=R*(k%8===0?.93:.94);
+  ctx.strokeStyle=k%8===0?'rgba(255,203,132,.36)':'rgba(99,197,235,.16)';ctx.lineWidth=k%8===0?1.15:.5;
+  ctx.beginPath();ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);ctx.lineTo(Math.cos(a)*rr2,Math.sin(a)*rr2);ctx.stroke();
+ }
+ ctx.restore();
+ // Photon aperture and gold-white quasar in the center.
+ const nr=R*(.38+.025*Math.sin(t*1.4)+e*.11);
+ let aperture=ctx.createRadialGradient(0,0,0,0,0,nr*1.6);
+ aperture.addColorStop(0,'rgba(255,252,223,1)');aperture.addColorStop(.12,'rgba(255,217,137,.95)');aperture.addColorStop(.31,'rgba(255,151,69,.63)');aperture.addColorStop(.56,'rgba(57,161,255,.31)');aperture.addColorStop(1,'rgba(11,77,157,0)');
+ ctx.fillStyle=aperture;ctx.beginPath();ctx.arc(0,0,nr*1.6,0,6.283);ctx.fill();
+ // Concentric sealed reactor rings glow around the central aperture.
+ for(let i=0;i<3;i++){
+  ctx.save();ctx.rotate(t*(i%2?-.15:.11)+i*1.1);
+  const rr=R*(.29+.12*i);ctx.shadowColor=i===0?'#ffd29a':'#64cfff';ctx.shadowBlur=8;
+  ctx.strokeStyle=i===0?'rgba(255,221,153,.75)':'rgba(98,219,255,.38)';ctx.lineWidth=i===0?1.3:1.0;
+  for(let j=0;j<4;j++){let a=j*1.57+i*.21;ctx.beginPath();ctx.arc(0,0,rr,a,a+.76);ctx.stroke()}
+  ctx.restore();
+ }
+ // Carefully controlled flares.
+ ctx.save();ctx.rotate(.18+Math.sin(t*.07)*.15);
+ let flare=ctx.createLinearGradient(-R*1.4,0,R*1.4,0);
+ flare.addColorStop(0,'rgba(45,151,244,0)');flare.addColorStop(.38,'rgba(77,161,224,.035)');flare.addColorStop(.5,'rgba(255,241,199,.42)');flare.addColorStop(.62,'rgba(85,178,252,.035)');flare.addColorStop(1,'rgba(45,151,244,0)');ctx.fillStyle=flare;
+ ctx.beginPath();ctx.ellipse(0,0,R*1.4,Math.max(1,R*.012),0,0,6.283);ctx.fill();ctx.restore();
+ ctx.restore();
+}
+
+function drawOrbitParticles(t){ctx.save();ctx.globalCompositeOperation='lighter';
+ for(const o of orbitConfigs.slice(0,3)){
+  for(let j=0;j<9;j++){
+   let a=(j/9)*6.283+t*(o.speed*1.9+j*.0002);let v=spin3(Math.cos(a)*o.radius,Math.sin(a)*o.radius,0,o.ax,o.ay+t*o.speed,o.az);let p=project(...v);
+   let g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],7.5);
+   g.addColorStop(0,o.color);g.addColorStop(.18,'rgba(137,228,255,.43)');g.addColorStop(1,'rgba(8,98,154,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(p[0],p[1],7.5,0,6.283);ctx.fill();
+  }
+ }
+ ctx.restore();}
+function drawReticles(t){ctx.save();ctx.translate(CX,CY);ctx.strokeStyle='rgba(89,206,247,.20)';ctx.lineWidth=.8;
+ const r=scale*.47;
+ for(let i=0;i<4;i++){
+ const a=t*.025+i*Math.PI/2;ctx.beginPath();ctx.arc(0,0,r,a,a+.20);ctx.stroke();
+ }
+ // Internal rotating measuring segments.
+ ctx.rotate(-t*.12);for(let k=0;k<12;k++){
+ let a=k*Math.PI/6;ctx.save();ctx.rotate(a);ctx.strokeStyle=k%3?'rgba(88,204,238,.2)':'rgba(255,196,119,.39)';ctx.beginPath();ctx.moveTo(scale*.245,0);ctx.lineTo(scale*(k%3?.266:.293),0);ctx.stroke();ctx.restore();}
+ ctx.restore();}
+function drawOverlay(t){ctx.clearRect(0,0,W,H);if(!gl||!program)drawNebulaFallback();
+ drawStars(t);drawBeams(t);drawPlasmaDisk(t);
+ for(const o of orbitConfigs)drawOrbit(o,t,false);
+ drawIons(t);drawCoreOrnament(t);drawReticles(t);drawCorona(t);
+ for(const o of orbitConfigs)drawOrbit(o,t,true);
+ drawOrbitParticles(t);
+}
+
+// --------------------------- Wallpaper Engine audio ----------------------------
+// Wallpaper Engine calls this with 64 bands per channel at ~30Hz.
+function wallpaperAudioListener(samples){if(!samples||samples.length<128)return;hasWallpaperAudio=true;lastWallpaperAudio=performance.now();
+ const average=(lo,hi)=>{let s=0;for(let i=lo;i<hi;i++)s+=(Math.min(1,samples[i]||0)+Math.min(1,samples[i+64]||0))*.5;return s/(hi-lo)};
+ targetBass=clamp(average(0,7)*2.7,0,1);targetMid=clamp(average(8,27)*3.7,0,1);targetTreble=clamp(average(28,63)*5.,0,1);
+}
+if(typeof window.wallpaperRegisterAudioListener==='function'){
+  window.wallpaperRegisterAudioListener(wallpaperAudioListener);
+  byId('modeLabel').textContent='WALLPAPER';
+}
+// Optional wallpaper settings, when user properties are later added in editor.
+window.wallpaperPropertyListener={applyUserProperties:function(properties){
+ if(properties.showhud)document.body.classList.toggle('ui-off',!properties.showhud.value);
+}};
+function readAudio(t){
+ if(hasWallpaperAudio&&performance.now()-lastWallpaperAudio<1200){demo=false;byId('modeLabel').textContent='WALLPAPER';return;}
+ if(analyser&&audioSource&&!byId('player').paused){analyser.getByteFrequencyData(freqData);
+ const avg=(a,b)=>{let sum=0;for(let i=a;i<b;i++)sum+=freqData[i]||0;return sum/((b-a)*255)};
+ targetBass=clamp(avg(1,9)*2.1,0,1);targetMid=clamp(avg(10,45)*2.4,0,1);targetTreble=clamp(avg(46,150)*3,0,1);byId('modeLabel').textContent='LOCAL AUDIO';return;
+ }
+ if(demo){const beat=(x)=>Math.pow(Math.max(0,Math.sin(x)),8);
+ targetBass=.19+.7*beat(t*4.0)+.12*beat(t*9.5);targetMid=.14+.51*beat(t*2.7+.6);targetTreble=.14+.66*beat(t*7.8+1.8);
+ byId('modeLabel').textContent='DEMO';return;
+ }
+ targetBass=.06+.035*Math.sin(t*.85);targetMid=.045+.025*Math.sin(t*.7+1);targetTreble=.04+.035*Math.sin(t*1.3+2);byId('modeLabel').textContent='AMBIENT';
+}
+byId('demoBtn').addEventListener('click',()=>{demo=!demo;audioSource=false;byId('player').pause();toast(demo?'演示节拍已开启（模拟波动，无声音）':'已切换为静默呼吸模式')});
+byId('audioFile').addEventListener('change',async(e)=>{
+ const file=e.target.files&&e.target.files[0];if(!file)return;
+ try{
+  let player=byId('player');if(player.src.startsWith('blob:'))URL.revokeObjectURL(player.src);
+  player.src=URL.createObjectURL(file);player.volume=.66;
+  if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)();analyser=audioCtx.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.79;freqData=new Uint8Array(analyser.frequencyBinCount);
+   srcNode=audioCtx.createMediaElementSource(player);srcNode.connect(analyser);analyser.connect(audioCtx.destination);
+  }
+  await audioCtx.resume();await player.play();audioSource=true;demo=false;toast('正在播放：'+file.name.slice(0,29));
+ }catch(err){toast('音乐加载失败，请检查浏览器音频权限');console.error(err)}
+});
+byId('hudBtn').addEventListener('click',()=>document.body.classList.toggle('ui-off'));
+addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
+addEventListener('mousemove',e=>{mouseX=(e.clientX/W-.5)*2;mouseY=(e.clientY/H-.5)*2},{passive:true});
+addEventListener('visibilitychange',()=>{pause=document.hidden;last=performance.now()});
+let uiTime=0;
+function updateUI(){byId('bassBar').style.width=(8+bass*87)+'%';byId('midBar').style.width=(8+mid*87)+'%';byId('trebleBar').style.width=(8+treble*87)+'%';
+byId('bassText').textContent=String(Math.round(bass*99)).padStart(2,'0');byId('midText').textContent=String(Math.round(mid*99)).padStart(2,'0');byId('trebleText').textContent=String(Math.round(treble*99)).padStart(2,'0');
+byId('stability').textContent=(99.68+.29*Math.abs(Math.sin(now*.074))).toFixed(2);
+const d=new Date();byId('clock').textContent=d.toLocaleTimeString('en-GB',{hour12:false});}
+function loop(ms){requestAnimationFrame(loop);if(pause)return;
+ if(!last)last=ms;const dt=Math.min(.05,(ms-last)/1000);last=ms;now+=dt;
+ readAudio(now);let smoothing=1-Math.exp(-dt*9.5);bass=lerp(bass,targetBass,smoothing);mid=lerp(mid,targetMid,smoothing);treble=lerp(treble,targetTreble,smoothing);
+ tiltX=lerp(tiltX,mouseX,.025);tiltY=lerp(tiltY,mouseY,.025);
+ if(gl&&program){gl.useProgram(program);gl.uniform2f(uRes,canvas.width,canvas.height);gl.uniform1f(uTime,now);gl.uniform3f(uAudio,bass,mid,treble);gl.uniform2f(uDrift,tiltX,tiltY);gl.drawArrays(gl.TRIANGLES,0,6);}
+ drawOverlay(now);
+ if(now-uiTime>.2){updateUI();uiTime=now;}
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

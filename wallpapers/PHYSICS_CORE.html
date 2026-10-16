@@ -63,7 +63,7 @@
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v1.0 — single-file, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v1.1 — single-file, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -73,6 +73,10 @@ const byId=id=>document.getElementById(id);
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const rand=(a,b)=>a+Math.random()*(b-a);
+// Motion philosophy: visible mechanical rotation + coherent particle flow + slower
+// volumetric breathing. Original interface and color palette intentionally retained.
+const TAU=Math.PI*2;
+const motion={reactor:1,orbital:1,flow:1};
 let W=innerWidth,H=innerHeight,D=1,CX=0,CY=0,scale=1;
 let now=0,last=0,pause=false,frame=0,hasWallpaperAudio=false,lastWallpaperAudio=-10000;
 let bass=0,mid=0,treble=0,targetBass=0,targetMid=0,targetTreble=0,demo=false,audioSource=false;
@@ -122,14 +126,14 @@ color+=vec3(.018,.19,.27)*halo*(.6+radialNoise*.9);
 vec2 disk=rot(-.31)*p;
 float diskR=length(vec2(disk.x,disk.y*2.18));
 float spin=atan(disk.y*2.18,disk.x);
-float turb=fbm(vec2(spin*1.9+2.0, diskR*22.0-t*.32));
-float swirl=sin(spin*13.0-diskR*44.0+t*.34+3.0*turb);
+float turb=fbm(vec2(spin*2.2+2.0-t*.42, diskR*22.0-t*1.15));
+float swirl=sin(spin*13.0-diskR*44.0+t*2.1+3.0*turb);
 float shell=gauss(diskR-.44,65.)*(.54+.46*swirl*swirl);
-float filaments=pow(.5+.5*sin(spin*31.0-diskR*73.0+t*.25),7.0);
+float filaments=pow(.5+.5*sin(spin*31.0-diskR*73.0+t*2.6),7.0);
 float diskGlow=gauss(diskR-.42,22.0)*(.2+.9*turb)*(.65+.35*filaments);
 vec3 cool=vec3(.10,.54,1.00);
 vec3 warm=vec3(1.00,.45,.11);
-float phase=.5+.5*sin(spin*2.7+t*.18);
+float phase=.5+.5*sin(spin*2.7+t*.47);
 color+=mix(cool,warm,phase)*shell*.47;
 color+=mix(vec3(.02,.30,.45),vec3(.55,.22,.046),phase)*diskGlow*.22;
 // Geometric outer aura and concentric flux gates.
@@ -141,7 +145,7 @@ color+=vec3(.12,.55,1.0)*rays*gauss(r,14.)*.23;
 // Dark reactor body surrounded by an extremely bright containment rim.
 float body=1.0-smoothstep(.182,.196,r);
 float bodyGradient=clamp(r/.195,0.,1.);
-float lattice=(.5+.5*sin(a*30.0+t*.035+sin(r*45.)*.7));
+float lattice=(.5+.5*sin(a*30.0+t*.62+sin(r*45.)*.7));
 vec3 bodyCol=mix(vec3(.004,.014,.034),vec3(.014,.046,.083),bodyGradient);
 bodyCol+=vec3(.018,.06,.077)*pow(lattice,17.0)*smoothstep(.08,.19,r);
 color=mix(color,bodyCol,body*.985);
@@ -149,7 +153,7 @@ float rim=gauss(r-.194,12000.) +gauss(r-.201,4300.)*.32;
 color+=vec3(.21,.78,1.10)*rim*(.68+.28*sin(a*17.-t*.25));
 // Nested moving containment coils with a central hot aperture.
 float inner=gauss(r-.134,5800.)*.42+gauss(r-.097,6500.)*.45+gauss(r-.061,12000.)*.7;
-float pulse=.84+.12*sin(t*.9)+audio.x*.75;
+float pulse=.83+.17*sin(t*1.8)+audio.x*.75;
 color+=vec3(.05,.58,.95)*inner*pulse*body;
 float nucleus=gauss(r,380.)+gauss(r,1500.)*.78+gauss(r,4100.)*.75;
 color+=vec3(1.1,.67,.30)*nucleus*(.65+.55*audio.x);
@@ -185,10 +189,10 @@ addEventListener('resize',resize);resize();
 
 // --------------------- Orbital geometry + ion particles ---------------------
 const orbitConfigs=[
- {radius:1.04,ax:1.05,ay:.24,az:.10,color:'#66dfff',width:1.2,speed:.045},
- {radius:1.16,ax:.16,ay:.96,az:.64,color:'#87c7f2',width:.92,speed:-.038},
- {radius:.86,ax:.67,ay:.42,az:-.63,color:'#ffbe7b',width:1.25,speed:.080},
- {radius:1.32,ax:.42,ay:-.52,az:.20,color:'#45a3cd',width:.55,speed:-.032},
+ {radius:1.04,ax:1.05,ay:.24,az:.10,color:'#66dfff',width:1.35,speed:.37},
+ {radius:1.16,ax:.16,ay:.96,az:.64,color:'#87c7f2',width:1.12,speed:-.29},
+ {radius:.86,ax:.67,ay:.42,az:-.63,color:'#ffbe7b',width:1.38,speed:.43},
+ {radius:1.32,ax:.42,ay:-.52,az:.20,color:'#45a3cd',width:.76,speed:-.21},
 ];
 function spin3(x,y,z,ax,ay,az){let cy=Math.cos(ay),sy=Math.sin(ay),cx=Math.cos(ax),sx=Math.sin(ax),cz=Math.cos(az),sz=Math.sin(az);
  let x1=x*cy+z*sy,z1=-x*sy+z*cy;let y1=y*cx-z1*sx,z2=y*sx+z1*cx;return [x1*cz-y1*sz,x1*sz+y1*cz,z2];}
@@ -200,12 +204,17 @@ const ions=Array.from({length:1300},(_,i)=>({r:.26+Math.pow(rng(),.55)*1.23,a:rn
 const sparks=Array.from({length:88},()=>({a:rng()*6.28,r:.35+rng()*1.04,ph:rng()*6.28,gold:rng()>.5}));
 function lineArc(points,color,width,alpha,blur){ctx.save();ctx.lineJoin='round';ctx.strokeStyle=color;ctx.lineWidth=width;ctx.globalAlpha=alpha;ctx.shadowColor=color;ctx.shadowBlur=blur;ctx.beginPath();for(let i=0;i<points.length;i++){let p=points[i];if(i===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);}ctx.stroke();ctx.restore()}
 function drawOrbit(o,t,front){const pts=[];const amp=1+audioStrength()*.035;
+ // All three axes evolve independently, making the gyroscopic structure visibly move.
+ const tiltA=o.ax+Math.sin(t*.19+o.radius*3.)*.14;
+ const tiltZ=o.az+Math.sin(t*.13+o.radius*2.)*.12;
+ const tiltY=o.ay+t*o.speed;
+ 
  for(let i=0;i<=300;i++){
   let a=i/300*Math.PI*2;
-  let [x,y,z]=spin3(Math.cos(a)*o.radius*amp,Math.sin(a)*o.radius*amp,0,o.ax,o.ay+t*o.speed,o.az);
+  let [x,y,z]=spin3(Math.cos(a)*o.radius*amp,Math.sin(a)*o.radius*amp,0,tiltA,tiltY,tiltZ);
   let p=project(x,y,z);pts.push({p,z});
  }
- let run=[];function flush(){if(run.length>1)lineArc(run,o.color,o.width,front?.58:.19,front?13:4);run=[];}
+ let run=[];function flush(){if(run.length>1)lineArc(run,o.color,o.width,front?.72:.16,front?15:3);run=[];}
  for(let i=0;i<pts.length;i++){
   let good=front?(pts[i].z>=0):(pts[i].z<0);
   if(good)run.push(pts[i].p);else flush();
@@ -213,7 +222,7 @@ function drawOrbit(o,t,front){const pts=[];const amp=1+audioStrength()*.035;
  // Radial markers on containment coils.
  for(let j=0;j<40;j++){
   let a=j/40*Math.PI*2+t*o.speed*.8;
-  let out=spin3(Math.cos(a)*o.radius,Math.sin(a)*o.radius,0,o.ax,o.ay+t*o.speed,o.az);
+  let out=spin3(Math.cos(a)*o.radius,Math.sin(a)*o.radius,0,tiltA,tiltY,tiltZ);
   if((front&&out[2]<0)||(!front&&out[2]>=0))continue;
   const p1=project(out[0]*.987,out[1]*.987,out[2]*.987),p2=project(out[0]*1.013,out[1]*1.013,out[2]*1.013);
   lineArc([p1,p2],o.color,.8,(j%5===0?.58:.18)*(front?1:.5),3);
@@ -222,9 +231,9 @@ function drawOrbit(o,t,front){const pts=[];const amp=1+audioStrength()*.035;
 function audioStrength(){return Math.min(1,bass*.75+mid*.4+treble*.25)}
 function drawNebulaFallback(){let g=ctx.createRadialGradient(CX,CY,0,CX,CY,scale*1.8);g.addColorStop(0,'#092b49');g.addColorStop(.38,'#05152b');g.addColorStop(1,'#010510');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
  let cg=ctx.createRadialGradient(CX,CY,4,CX,CY,scale*.64);cg.addColorStop(0,'#ffcc89');cg.addColorStop(.08,'#a66c41');cg.addColorStop(.32,'#041528');cg.addColorStop(.75,'#0b3355');cg.addColorStop(1,'transparent');ctx.fillStyle=cg;ctx.beginPath();ctx.arc(CX,CY,scale*.65,0,6.283);ctx.fill();}
-function drawStars(t){ctx.save();for(const s of stars){const x=s.x*W,y=s.y*H,twinkle=.38+.48*(.5+.5*Math.sin(t*(.6+s.b)+s.phase));ctx.fillStyle=s.b>.94?'rgba(255,208,150,'+twinkle+')':'rgba(126,210,239,'+(twinkle*.65)+')';ctx.beginPath();ctx.arc(x,y,s.r*(s.b>.97?1.5:1),0,6.283);ctx.fill();}ctx.restore()}
+function drawStars(t){ctx.save();for(const s of stars){const x=(s.x+Math.sin(t*.018+s.phase)*.0018)*W,y=(s.y+Math.cos(t*.016+s.phase)*.0018)*H,twinkle=.38+.48*(.5+.5*Math.sin(t*(.6+s.b)+s.phase));ctx.fillStyle=s.b>.94?'rgba(255,208,150,'+twinkle+')':'rgba(126,210,239,'+(twinkle*.65)+')';ctx.beginPath();ctx.arc(x,y,s.r*(s.b>.97?1.5:1),0,6.283);ctx.fill();}ctx.restore()}
 function drawIons(t){ctx.save();ctx.globalCompositeOperation='lighter';
- for(const p of ions){let a=p.a+t*p.speed/(.7+p.r*.7),r=p.r*(1+.013*Math.sin(t*1.5+p.seed));let z=Math.sin(a*1.7+p.seed)*p.plane;
+ for(const p of ions){let a=p.a+t*p.speed*2.4/(.7+p.r*.7),r=p.r*(1+.032*Math.sin(t*1.8+p.seed));let z=Math.sin(a*1.7+p.seed)*p.plane;
  let [x,y,z1]=spin3(Math.cos(a)*r,Math.sin(a)*r,z,.32,-.17,.28);
  let v=project(x,y,z1);let dist=Math.hypot(v[0]-CX,v[1]-CY)/scale;
  if(dist<.26)continue;
@@ -237,8 +246,8 @@ function drawCorona(t){ctx.save();ctx.globalCompositeOperation='lighter';
  // High energy arcs along the boundary of the sphere, curved Bezier strips.
  const amp=audioStrength();
  for(let i=0;i<11;i++){
- let a=i*6.283/11 + t*(i%2?-.042:.034);let rad=scale*(.38+.008*Math.sin(i*4+t));
- let length=.12+.11*(.5+.5*Math.sin(i*2+t*.7));
+ let a=i*6.283/11 + t*(i%2?-.19:.24);let rad=scale*(.38+.008*Math.sin(i*4+t));
+ let length=.14+.14*(.5+.5*Math.sin(i*2+t*1.2));
  ctx.strokeStyle=i%4===0?'rgba(255,183,92,.35)':'rgba(90,220,255,.27)';ctx.shadowColor=i%4===0?'#ff9d61':'#50c9ff';ctx.shadowBlur=12+20*amp;ctx.lineWidth=i%3===0?1.6:1.0;
  ctx.beginPath();ctx.arc(CX,CY,rad,a,a+length);ctx.stroke();
  }
@@ -265,7 +274,7 @@ function drawPlasmaDisk(t){
  }
  // Hundreds of rotating ion bands create the appearance of turbulent flow.
  for(let i=0;i<134;i++){
-   let a=i*2.39996+t*(i%2?-.085:.14),r=scale*(.45+.60*((i*73)%139)/139);
+   let a=i*2.39996+t*(i%2?-.39:.57),r=scale*(.45+.60*((i*73)%139)/139);
    let x=Math.cos(a)*r,y=Math.sin(a)*r*.31;
    let len=2.0+(i%7)*1.8;
    ctx.lineWidth=(i%13===0?1.6:.55);
@@ -282,19 +291,19 @@ function drawCoreOrnament(t){
  glow.addColorStop(0,'rgba(253,185,94,.34)');glow.addColorStop(.23,'rgba(67,147,215,.18)');glow.addColorStop(.48,'rgba(19,131,204,.095)');glow.addColorStop(1,'rgba(0,90,145,0)');
  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(0,0,scale*.69,0,6.283);ctx.fill();
  // Containment shell; sharp dark interior with highly luminous electric edge.
- const R=scale*.36;
+ const R=scale*.36*(1+.018*Math.sin(t*1.9)+e*.052);
  const body=ctx.createRadialGradient(-R*.16,-R*.16,0,0,0,R);
  body.addColorStop(0,'rgba(1,9,24,.42)');body.addColorStop(.39,'rgba(1,13,30,.67)');body.addColorStop(.74,'rgba(3,24,44,.89)');body.addColorStop(.93,'rgba(7,52,77,.81)');body.addColorStop(1,'rgba(18,150,201,.35)');
  ctx.fillStyle=body;ctx.beginPath();ctx.arc(0,0,R,0,6.283);ctx.fill();
  ctx.save();ctx.shadowColor='#4ad7ff';ctx.shadowBlur=21+10*e;ctx.strokeStyle='rgba(91,220,255,.65)';ctx.lineWidth=1.45;ctx.beginPath();ctx.arc(0,0,R,0,6.283);ctx.stroke();ctx.restore();
  // Instrument gyroscopes etched into the inner dome.
  for(let j=0;j<4;j++){
-   ctx.save();ctx.rotate(t*(j%2?-.07:.06)+j*.6);
+   ctx.save();ctx.rotate(t*(j%2?-.34:.29)+j*.6);
    ctx.strokeStyle=j%2===0?'rgba(61,193,234,.3)':'rgba(255,189,101,.22)';
    ctx.lineWidth=.9;ctx.beginPath();ctx.ellipse(0,0,R*(.72+j*.055),R*(.26+j*.09),j*.62,0,6.283);ctx.stroke();ctx.restore();
  }
  // Radial technical engraving.
- ctx.save();ctx.rotate(-t*.12);
+ ctx.save();ctx.rotate(-t*.55);
  for(let k=0;k<96;k++){
   let a=k/96*Math.PI*2,rr=R*(k%8===0?.82:.91),rr2=R*(k%8===0?.93:.94);
   ctx.strokeStyle=k%8===0?'rgba(255,203,132,.36)':'rgba(99,197,235,.16)';ctx.lineWidth=k%8===0?1.15:.5;
@@ -308,7 +317,7 @@ function drawCoreOrnament(t){
  ctx.fillStyle=aperture;ctx.beginPath();ctx.arc(0,0,nr*1.6,0,6.283);ctx.fill();
  // Concentric sealed reactor rings glow around the central aperture.
  for(let i=0;i<3;i++){
-  ctx.save();ctx.rotate(t*(i%2?-.15:.11)+i*1.1);
+  ctx.save();ctx.rotate(t*(i%2?-.62:.47)+i*1.1);
   const rr=R*(.29+.12*i);ctx.shadowColor=i===0?'#ffd29a':'#64cfff';ctx.shadowBlur=8;
   ctx.strokeStyle=i===0?'rgba(255,221,153,.75)':'rgba(98,219,255,.38)';ctx.lineWidth=i===0?1.3:1.0;
   for(let j=0;j<4;j++){let a=j*1.57+i*.21;ctx.beginPath();ctx.arc(0,0,rr,a,a+.76);ctx.stroke()}
@@ -322,15 +331,95 @@ function drawCoreOrnament(t){
  ctx.restore();
 }
 
-function drawOrbitParticles(t){ctx.save();ctx.globalCompositeOperation='lighter';
+function drawOrbitParticles(t){
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ // Bright ion packets, with directional taper, racing along each moving 3D orbit.
  for(const o of orbitConfigs.slice(0,3)){
-  for(let j=0;j<9;j++){
-   let a=(j/9)*6.283+t*(o.speed*1.9+j*.0002);let v=spin3(Math.cos(a)*o.radius,Math.sin(a)*o.radius,0,o.ax,o.ay+t*o.speed,o.az);let p=project(...v);
-   let g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],7.5);
-   g.addColorStop(0,o.color);g.addColorStop(.18,'rgba(137,228,255,.43)');g.addColorStop(1,'rgba(8,98,154,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(p[0],p[1],7.5,0,6.283);ctx.fill();
+  for(let j=0;j<6;j++){
+   let head=(j/6)*TAU+t*(.72+Math.abs(o.speed)*.5)*(o.speed>0?1:-1);
+   let lastPoint=null;
+   const aa=o.ax+Math.sin(t*.19+o.radius*3.)*.14;
+   const zz=o.az+Math.sin(t*.13+o.radius*2.)*.12;
+   for(let k=17;k>=0;k--){
+    const phase=head-k*.017*(o.speed>0?1:-1);
+    const v=spin3(Math.cos(phase)*o.radius,Math.sin(phase)*o.radius,0,aa,o.ay+t*o.speed,zz);
+    const pt=project(...v);
+    if(lastPoint){ctx.strokeStyle=o.color;ctx.globalAlpha=(1-k/19)*.39;ctx.lineWidth=k<3?2.1:.8;ctx.shadowBlur=k<4?12:0;ctx.shadowColor=o.color;
+     ctx.beginPath();ctx.moveTo(lastPoint[0],lastPoint[1]);ctx.lineTo(pt[0],pt[1]);ctx.stroke();}
+    lastPoint=pt;
+   }
+   if(lastPoint){ctx.globalAlpha=.9;ctx.shadowBlur=22;ctx.shadowColor=o.color;ctx.fillStyle='#ecfcff';ctx.beginPath();ctx.arc(lastPoint[0],lastPoint[1],2.5,0,TAU);ctx.fill();}
   }
  }
- ctx.restore();}
+ ctx.restore();
+}
+function drawShockwaves(t){
+ // Each pulse begins at the containment shell and traverses the outer reactor.
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ for(let j=0;j<3;j++){
+  let phase=((t/5.7+j/3)%1+1)%1;
+  let e=1-Math.pow(1-phase,2);
+  let radius=scale*(.31+1.27*e);
+  let alpha=Math.pow(1-phase,1.65)*(.17+audioStrength()*.14);
+  ctx.strokeStyle=j%3===0?'rgba(255,181,105,'+alpha+')':'rgba(67,208,255,'+alpha+')';
+  ctx.shadowColor=j%3===0?'#ffae65':'#4bdbff';ctx.shadowBlur=22;
+  ctx.lineWidth=2.4-1.8*phase;ctx.beginPath();ctx.ellipse(CX,CY,radius,radius*(.81+.16*phase),-.25,0,TAU);ctx.stroke();
+  ctx.lineWidth=.65;ctx.shadowBlur=0;ctx.setLineDash([9,18]);ctx.lineDashOffset=-t*38;
+  ctx.beginPath();ctx.ellipse(CX,CY,radius*1.022,radius*(.82+.16*phase),-.25,0,TAU);ctx.stroke();
+  ctx.setLineDash([]);
+ }
+ ctx.restore();
+}
+function drawEnergyVortex(t){
+ // Infalling streams curve into the reactor; energy visibly traverses the arms.
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ const energy=audioStrength();
+ for(let arm=0;arm<9;arm++){
+  const gold=arm%3===0;
+  const pts=[];
+  const phase=arm*TAU/9+t*(gold?.32:-.40);
+  for(let k=0;k<=70;k++){
+    const u=k/70;
+    const r=scale*(.34+u*1.14);
+    const a=phase+u*2.20+Math.sin(t*.35+u*8+arm)*.042;
+    const x=Math.cos(a)*r, y=Math.sin(a)*r*.43;
+    const ca=Math.cos(-.31),sa=Math.sin(-.31);
+    pts.push([CX+x*ca-y*sa,CY+x*sa+y*ca]);
+  }
+  ctx.shadowColor=gold?'#f7a55b':'#2ecfff';ctx.shadowBlur=gold?15:12;
+  ctx.strokeStyle=gold?'rgba(255,172,101,.20)':'rgba(92,199,255,.17)';ctx.lineWidth=gold?1.45:1.1;
+  ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();
+  for(let k=0;k<4;k++){
+    const u=((t*(gold?.48:.65)+k/4+arm*.127)%1+1)%1;
+    // The outward path point progresses inwards as time increases.
+    const ix=Math.floor((1-u)*70),p=pts[ix];
+    const rad=(k===0?2.5:1.3)*(1+energy*.35);
+    ctx.shadowBlur=18;ctx.fillStyle=gold?'rgba(255,208,143,.88)':'rgba(159,238,255,.8)';ctx.beginPath();ctx.arc(p[0],p[1],rad,0,TAU);ctx.fill();
+  }
+ }
+ ctx.restore();
+}
+function drawLightning(t){
+ // Coherent, non-random flicker: each filament stays spatially continuous.
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ let e=audioStrength();
+ for(let i=0;i<7;i++){
+  const a=i*TAU/7+t*(i%2?.33:-.27);
+  const inner=scale*.19,outer=scale*(.34+.05*Math.sin(t*1.2+i));
+  const p=[];
+  for(let k=0;k<23;k++){
+    const u=k/22;
+    const da=(Math.sin(u*33+t*4.1+i*7)*.036+Math.sin(u*67-t*3+i)*.015)*Math.sin(u*Math.PI);
+    const r=inner+(outer-inner)*u,phi=a+u*.45+da;
+    p.push([CX+Math.cos(phi)*r,CY+Math.sin(phi)*r]);
+  }
+  const flicker=.5+.5*Math.sin(t*3.4+i*3.2);
+  ctx.strokeStyle=i%4===0?'rgba(255,196,115,'+(.24+e*.24)*flicker+')':'rgba(114,230,255,'+(.21+e*.27)*flicker+')';
+  ctx.shadowBlur=13;ctx.shadowColor=i%4===0?'#fbb77a':'#69e1ff';ctx.lineWidth=1.2+e*.7;
+  ctx.beginPath();p.forEach((pt,j)=>j?ctx.lineTo(pt[0],pt[1]):ctx.moveTo(pt[0],pt[1]));ctx.stroke();
+ }
+ ctx.restore();
+}
 function drawReticles(t){ctx.save();ctx.translate(CX,CY);ctx.strokeStyle='rgba(89,206,247,.20)';ctx.lineWidth=.8;
  const r=scale*.47;
  for(let i=0;i<4;i++){
@@ -341,9 +430,9 @@ function drawReticles(t){ctx.save();ctx.translate(CX,CY);ctx.strokeStyle='rgba(8
  let a=k*Math.PI/6;ctx.save();ctx.rotate(a);ctx.strokeStyle=k%3?'rgba(88,204,238,.2)':'rgba(255,196,119,.39)';ctx.beginPath();ctx.moveTo(scale*.245,0);ctx.lineTo(scale*(k%3?.266:.293),0);ctx.stroke();ctx.restore();}
  ctx.restore();}
 function drawOverlay(t){ctx.clearRect(0,0,W,H);if(!gl||!program)drawNebulaFallback();
- drawStars(t);drawBeams(t);drawPlasmaDisk(t);
+ drawStars(t);drawBeams(t);drawShockwaves(t);drawPlasmaDisk(t);
  for(const o of orbitConfigs)drawOrbit(o,t,false);
- drawIons(t);drawCoreOrnament(t);drawReticles(t);drawCorona(t);
+ drawEnergyVortex(t);drawIons(t);drawCoreOrnament(t);drawLightning(t);drawReticles(t);drawCorona(t);
  for(const o of orbitConfigs)drawOrbit(o,t,true);
  drawOrbitParticles(t);
 }

@@ -64,7 +64,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v1.8 — four jeweled compass marks, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v1.9 — quiet faceted time needles, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -224,105 +224,69 @@ function orbitPoint(o,pose,a,radiusFactor=1,amp=1){
                Math.sin(a)*o.radius*radiusFactor*amp,0,...pose);
  return project(...v);
 }
+// V1.9: A quiet, inlaid celestial needle. One slim faceted jewel replaces
+// the earlier winged silhouette; its tip stays fixed to the live time-angle.
 function drawOrnateHand(o,t,pose,front,amp){
- // A slim fantasy-jewellery pointer: faceted spearhead, curved metal filigree,
- // small crystal, restrained warm/cool bloom. No chunky clock-arrow shapes.
- const fraction=clockFraction[o.unit],a=-Math.PI/2+fraction*TAU;
- const tip=orbitPoint(o,pose,a,1.042,amp);
+ const fraction=clockFraction[o.unit], angle=-Math.PI/2+fraction*TAU;
+ const tip=orbitPoint(o,pose,angle,1.055,amp);
  if(front?tip[2]<0:tip[2]>=0)return;
- const heel=orbitPoint(o,pose,a,.963,amp);
+ const heel=orbitPoint(o,pose,angle,.956,amp);
  const dx=tip[0]-heel[0],dy=tip[1]-heel[1];
- const len=Math.hypot(dx,dy);
- if(len<3)return;
- const frontAlpha=front?.90:.24;
- ctx.save();ctx.translate(tip[0],tip[1]);ctx.rotate(Math.atan2(dy,dx));
- ctx.globalAlpha=frontAlpha;ctx.globalCompositeOperation='source-over';
- ctx.lineJoin='round';ctx.lineCap='round';
- ctx.shadowColor=o.color;ctx.shadowBlur=front?8:2;
- const fill=ctx.createLinearGradient(-len,0,0,0);
- fill.addColorStop(0,'rgba(24,49,73,.19)');
- fill.addColorStop(.42,o.unit==='hour'?'rgba(188,117,52,.43)':'rgba(67,158,196,.32)');
- fill.addColorStop(.76,o.unit==='hour'?'rgba(255,210,139,.90)':'rgba(181,237,255,.82)');
- fill.addColorStop(1,'rgba(255,253,237,.99)');
- ctx.fillStyle=fill;ctx.strokeStyle=o.color;ctx.lineWidth=.85;
- // Symmetric etched lance. Delicate leaf shoulders rather than thick arrows.
- ctx.beginPath();ctx.moveTo(0,0);
- ctx.bezierCurveTo(-len*.09,-.8,-len*.15,-3.0,-len*.22,-3.1);
- ctx.lineTo(-len*.36,-1.75);
- ctx.bezierCurveTo(-len*.53,-2.05,-len*.69,-1.0,-len*.99,0);
- ctx.bezierCurveTo(-len*.69,1.0,-len*.53,2.05,-len*.36,1.75);
- ctx.lineTo(-len*.22,3.1);
- ctx.bezierCurveTo(-len*.15,3.0,-len*.09,.8,0,0);
- ctx.closePath();ctx.fill();ctx.stroke();
- // Thin symmetrical gold/silver vine details on either side of the needle.
- ctx.shadowBlur=front?5:0;ctx.strokeStyle=o.accent;ctx.lineWidth=.7;
- for(const sign of [-1,1]){
-  ctx.beginPath();ctx.moveTo(-len*.41,0);
-  ctx.bezierCurveTo(-len*.51,sign*4,-len*.69,sign*5.5,-len*.68,sign*.9);
-  ctx.stroke();
-  ctx.beginPath();ctx.moveTo(-len*.24,sign*2);
-  ctx.quadraticCurveTo(-len*.35,sign*5.5,-len*.45,sign*2);ctx.stroke();
- }
- // The point of the hand is the exact time position along the moving 3D ring.
- ctx.strokeStyle='#fff7d8';ctx.lineWidth=.65;
- ctx.beginPath();ctx.moveTo(-len*.18,0);ctx.lineTo(-1.2,0);ctx.stroke();
- // Faceted miniature diamond, not a large white planet.
- const gemX=-len*.62,gemR=front?2.5:1.65;
- ctx.fillStyle=o.unit==='hour'?'#ffe5a4':'#c0efff';
- ctx.strokeStyle='#fffdf0';ctx.lineWidth=.55;
- ctx.beginPath();ctx.moveTo(gemX+gemR,0);ctx.lineTo(gemX,gemR*.65);
- ctx.lineTo(gemX-gemR,0);ctx.lineTo(gemX,-gemR*.65);ctx.closePath();ctx.fill();ctx.stroke();
- ctx.fillStyle='#fffdf2';ctx.beginPath();ctx.arc(0,0,.9,0,TAU);ctx.fill();
- ctx.restore();
-}
-// Four jewel-like cardinal marks on every moving 3D ring.
-// Quarter positions are 12 / 3 / 6 / 9 in the ring's own clock coordinates.
-// The twelve-o'clock star is deliberately unique, with no numerical glyphs.
-function drawCardinalMarkers(o,pose,front,amp){
+ const length=Math.hypot(dx,dy);
+ if(length<5)return; // Edge-on geometry: let the selected orbit dot represent the hand.
+ const isHour=o.unit==='hour',isSecond=o.unit==='second';
+ const w=isHour?2.35:isSecond?1.52:1.95;
+ const gemSize=isHour?2.9:isSecond?2.15:2.5;
+ const light=isHour?'#ffdfac':isSecond?'#e7f7ff':'#b6eeff';
+ const edge=isHour?'#d4a16c':isSecond?'#91c7e0':'#6ac7e7';
+ const opacity=front?.92:.26;
  ctx.save();
+ ctx.translate(tip[0],tip[1]);
+ ctx.rotate(Math.atan2(dy,dx));
  ctx.globalCompositeOperation='source-over';
- for(let j=0;j<4;j++){
-  const a=-Math.PI/2+j*Math.PI/2;
-  const p=orbitPoint(o,pose,a,1,amp);
-  if(front?p[2]<0:p[2]>=0)continue;
-  const dist=Math.max(1,Math.hypot(p[0]-CX,p[1]-CY));
-  const nx=(p[0]-CX)/dist,ny=(p[1]-CY)/dist;
-  const tx=-ny,ty=nx;
-  const twelve=j===0;
-  const radial=twelve?9:5.3;
-  const wing=twelve?4.25:3.05;
-  const ink=twelve?'#fff4cf':o.accent;
-  ctx.save();
-  ctx.globalAlpha=front?(twelve?.96:.83):(twelve?.38:.24);
-  ctx.shadowColor=o.color;
-  ctx.shadowBlur=front?(twelve?12:6):2;
-  ctx.fillStyle=twelve?'rgba(244,211,149,.82)':'rgba(11,37,59,.88)';
-  ctx.strokeStyle=ink;ctx.lineWidth=twelve?1.3:1.0;
-  ctx.beginPath();
-  ctx.moveTo(p[0]+nx*radial,p[1]+ny*radial);
-  ctx.lineTo(p[0]+tx*wing,p[1]+ty*wing);
-  ctx.lineTo(p[0]-nx*(twelve?6.0:5.3),p[1]-ny*(twelve?6.0:5.3));
-  ctx.lineTo(p[0]-tx*wing,p[1]-ty*wing);
-  ctx.closePath();ctx.fill();ctx.stroke();
-  ctx.shadowBlur=front?(twelve?6:2):0;
-  ctx.fillStyle=twelve?'#fffefa':o.accent;
-  ctx.beginPath();ctx.arc(p[0],p[1],twelve?1.9:1.25,0,TAU);ctx.fill();
-  if(twelve){
-   // Fine symmetric ornament, like a miniature astrolabe crown.
-   ctx.strokeStyle=o.color;ctx.lineWidth=.85;ctx.globalAlpha*=.82;
-   const baseX=p[0]+nx*3.0,baseY=p[1]+ny*3.0;
-   for(const side of [-1,1]){
-    ctx.beginPath();
-    ctx.moveTo(baseX+tx*side*2.5,baseY+ty*side*2.5);
-    ctx.quadraticCurveTo(baseX+tx*side*7+nx*2,baseY+ty*side*7+ny*2,
-                        baseX+tx*side*7+nx*6,baseY+ty*side*7+ny*6);
-    ctx.stroke();
-   }
-  }
-  ctx.restore();
- }
+ ctx.globalAlpha=opacity;
+ ctx.lineJoin='round';
+ ctx.lineCap='round';
+ // Only a small bloom at the exact leading end; no luminous wings or starburst.
+ ctx.shadowColor=edge;ctx.shadowBlur=front?5:1;
+ const metal=ctx.createLinearGradient(-length,0,0,0);
+ metal.addColorStop(0,'rgba(11,35,56,.06)');
+ metal.addColorStop(.33,isHour?'rgba(113,72,42,.36)':'rgba(38,86,119,.34)');
+ metal.addColorStop(.77,isHour?'rgba(218,171,115,.81)':'rgba(122,196,226,.71)');
+ metal.addColorStop(1,isHour?'rgba(255,232,187,.94)':'rgba(220,245,255,.90)');
+ ctx.fillStyle=metal;
+ ctx.strokeStyle=edge;
+ ctx.lineWidth=.65;
+ // Smooth tapered lancet, maximum half-width ~2px. No protruding fins.
+ ctx.beginPath();
+ ctx.moveTo(-length,0);
+ ctx.bezierCurveTo(-length*.82,-w*.24,-length*.47,-w*.92,-length*.29,-w);
+ ctx.bezierCurveTo(-length*.17,-w*.75,-length*.06,-w*.20,0,0);
+ ctx.bezierCurveTo(-length*.06,w*.20,-length*.17,w*.75,-length*.29,w);
+ ctx.bezierCurveTo(-length*.47,w*.92,-length*.82,w*.24,-length,0);
+ ctx.closePath();ctx.fill();ctx.stroke();
+ // One narrow polished line along the centre of the needle.
+ ctx.shadowBlur=0;ctx.strokeStyle=light;ctx.globalAlpha=opacity*.77;
+ ctx.lineWidth=.55;
+ ctx.beginPath();ctx.moveTo(-length*.73,0);
+ ctx.quadraticCurveTo(-length*.38,-.22,-length*.10,0);ctx.stroke();
+ // A single jewel setting in the metal, rather than a detached flying ornament.
+ const gx=-length*.35;
+ ctx.globalAlpha=opacity;
+ ctx.fillStyle='rgba(4,24,41,.90)';
+ ctx.strokeStyle=edge;ctx.lineWidth=.60;
+ ctx.beginPath();ctx.arc(gx,0,gemSize+1.15,0,TAU);ctx.fill();ctx.stroke();
+ ctx.shadowColor=light;ctx.shadowBlur=front?4:0;
+ ctx.fillStyle=light;
+ ctx.beginPath();ctx.moveTo(gx+gemSize,0);
+ ctx.lineTo(gx,gemSize*.72);ctx.lineTo(gx-gemSize,0);
+ ctx.lineTo(gx,-gemSize*.72);ctx.closePath();ctx.fill();
+ // Minute glint at the tip identifies the precise time without overexposure.
+ ctx.shadowBlur=front?5:0;
+ ctx.beginPath();ctx.arc(-.65,0,.9,0,TAU);ctx.fill();
  ctx.restore();
 }
+
 function drawOrbit(o,t,front){
  const pose=getOrbitPose(o,t),amp=1+audioStrength()*.035;
  const pts=[];
@@ -345,16 +309,15 @@ function drawOrbit(o,t,front){
  for(let j=0;j<dots;j++){
   const p=orbitPoint(o,pose,-Math.PI/2+j/dots*TAU,1,amp);
   if(front?p[2]<0:p[2]>=0)continue;
-  const major=j%(dots/4)===0;
+  const major=dots===12||j%5===0;
   const selected=j===chosen;
   const brightness=front?1:.44;
-  ctx.globalAlpha=(selected?.64:major?.25:.23)*brightness;
-  ctx.shadowColor=o.color;ctx.shadowBlur=selected?4:0;
+  ctx.globalAlpha=(selected?.78:major?.47:.26)*brightness;
+  ctx.shadowColor=o.color;ctx.shadowBlur=selected?4:major?1:0;
   ctx.fillStyle=selected?o.accent:o.color;
-  ctx.beginPath();ctx.arc(p[0],p[1],selected?1.8:major?1.2:.75,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.arc(p[0],p[1],selected?2.1:major?1.25:.70,0,TAU);ctx.fill();
  }
  ctx.restore();
- drawCardinalMarkers(o,pose,front,amp);
  drawOrnateHand(o,t,pose,front,amp);
 }
 function audioStrength(){return Math.min(1,bass*.75+mid*.4+treble*.25)}

@@ -45,6 +45,23 @@
   @media(max-width:1000px){.hero{bottom:11vh}.readouts{display:none}.hero .desc{display:none}.top-right{font-size:9px}.bottom-line{font-size:8px}}
   @media(max-width:600px){.hero{bottom:13vh;left:6vw;max-width:85vw}h1{font-size:11vw}.subline{white-space:normal;font-size:8px}.top-right{display:none}.bottom-line{font-size:7px;bottom:3vh}.interface{bottom:75px;right:12px}}
   .ui-off .decor,.ui-off .edge,.ui-off .interface{display:none}
+
+/* Optional V1.2 performance monitor. Press P, or use PERF button. */
+.perf-panel{display:none;position:fixed;z-index:15;top:116px;right:28px;width:265px;padding:14px 16px;border:1px solid rgba(112,218,245,.32);border-radius:6px;
+background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #0009;color:#a9d7e7;font:11px/1.7 Consolas,monospace;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.perf-panel.open{display:block}
+.perf-head{display:flex;justify-content:space-between;align-items:center;color:#ffca88;font-size:10px;letter-spacing:.16em;margin-bottom:9px}
+.perf-head button{border:0;color:#9cc8d5;background:none;cursor:pointer;font:18px Consolas}
+.perf-head button:hover{color:#fff}
+.perf-row{display:flex;justify-content:space-between;gap:15px;padding:3px 0;border-bottom:1px solid #9cc6d619}
+.perf-row b{font-weight:500;color:#e4f7ff;white-space:nowrap}
+.perf-row b.warn{color:#ffbf85}
+.perf-chart{height:35px;display:flex;gap:3px;align-items:flex-end;margin:10px 0;border-bottom:1px solid #9cc6d633}
+.perf-chart i{flex:1;min-width:2px;background:#68cee9;box-shadow:0 0 5px #4ad0ff55}
+.perf-chart i.warn{background:#e8ac70}
+.perf-info{font:9px/1.65 Consolas,monospace;color:#86a6b8;letter-spacing:0}
+@media(max-width:600px){.perf-panel{top:56px;right:12px;width:min(265px,calc(100vw - 24px))}}
+
 </style>
 </head>
 <body>
@@ -57,13 +74,27 @@
 <div class="decor hero"><div class="pretitle">THE UNIVERSE IS A SYSTEM</div><h1>PHYSICS<br><b>CORE.</b></h1><div class="subline">SINGULARITY ENGINE &nbsp; // &nbsp; NO. 001</div><div class="desc">MATTER IS ENERGY &nbsp;·&nbsp; SPACE IS GEOMETRY &nbsp;·&nbsp; TIME IS MOTION</div></div>
 <div class="decor readouts"><div class="rhead">◈&nbsp; CORE TELEMETRY</div><div class="entry"><span>FLUX / BASS</span><span id="bassText">00</span></div><div class="meter"><span id="bassBar"></span></div><div class="entry"><span>FIELD / MID</span><span id="midText">00</span></div><div class="meter"><span id="midBar"></span></div><div class="entry"><span>ION / HIGH</span><span id="trebleText">00</span></div><div class="meter"><span id="trebleBar"></span></div><div class="entry"><span>MODE</span><span id="modeLabel">IDLE</span></div></div>
 <div class="decor bottom-line"><div>◉ &nbsp; P-C/001 &nbsp; ⟡ &nbsp; ORBITAL REACTOR SIMULATION</div><div><span class="gold">LIVE FIELD</span>&nbsp; / &nbsp; <span id="clock">00:00:00</span> &nbsp; / &nbsp; ∞</div></div>
-<div class="interface"><button id="demoBtn" title="模拟节拍，让你在没有音乐时预览响应效果">◈ 演示脉冲</button><label title="导入本地音频，让画面真正跟随音乐律动">♫ 本地音乐<input type="file" id="audioFile" accept="audio/*"></label><button id="hudBtn" title="隐藏或显示界面，快捷键 H">▣ HUD</button></div>
+<div class="interface"><button id="demoBtn" title="模拟节拍，让你在没有音乐时预览响应效果">◈ 演示脉冲</button><label title="导入本地音频，让画面真正跟随音乐律动">♫ 本地音乐<input type="file" id="audioFile" accept="audio/*"></label><button id="hudBtn" title="隐藏或显示界面，快捷键 H">▣ HUD</button><button id="perfBtn" title="性能监视，快捷键 P">▤ PERF</button></div>
+
+<div class="perf-panel" id="perfPanel" aria-label="性能监视面板">
+  <div class="perf-head"><span>◈ PERFORMANCE / LIVE</span><button id="perfClose" type="button" title="关闭性能面板">×</button></div>
+  <div class="perf-row"><span>FPS / 帧率</span><b id="statFps">采样中</b></div>
+  <div class="perf-row"><span>FRAME / 帧间隔</span><b id="statFrame">—</b></div>
+  <div class="perf-row"><span>DRAW / JS绘制</span><b id="statDraw">—</b></div>
+  <div class="perf-row"><span>STUTTER / &gt;50ms</span><b id="statStutter">—</b></div>
+  <div class="perf-row"><span>JS HEAP / 堆内存</span><b id="statHeap">—</b></div>
+  <div class="perf-row"><span>ENGINE</span><b id="statEngine">—</b></div>
+  <div class="perf-row"><span>CANVAS / 像素</span><b id="statCanvas">—</b></div>
+  <div class="perf-chart" id="perfChart" aria-label="过去24秒帧率变化"></div>
+  <div class="perf-info">每秒采样。JS堆不等于整个进程内存；JS绘制耗时不等于CPU占用率。GPU实际利用率、显存请看Windows任务管理器。</div>
+</div>
+
 <div class="toast" id="toast"></div>
 <audio id="player" loop></audio>
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v1.1 — single-file, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v1.2 — single-file, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -476,20 +507,63 @@ byId('audioFile').addEventListener('change',async(e)=>{
  }catch(err){toast('音乐加载失败，请检查浏览器音频权限');console.error(err)}
 });
 byId('hudBtn').addEventListener('click',()=>document.body.classList.toggle('ui-off'));
-addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
+addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.key.toLowerCase()==='p'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))perfToggle();if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
 addEventListener('mousemove',e=>{mouseX=(e.clientX/W-.5)*2;mouseY=(e.clientY/H-.5)*2},{passive:true});
-addEventListener('visibilitychange',()=>{pause=document.hidden;last=performance.now()});
+addEventListener('visibilitychange',()=>{pause=document.hidden;last=performance.now();perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;});
+
+/* Optional browser-only performance telemetry; GPU/RAM/CPU usage cannot be directly measured here. */
+const perfMon={open:false,t0:0,frames:0,drawMs:0,stutter:0,history:[]};
+function perfToggle(state){
+ perfMon.open=typeof state==='boolean'?state:!perfMon.open;
+ byId('perfPanel').classList.toggle('open',perfMon.open);
+ perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;
+ if(perfMon.open){
+  byId('statFps').textContent='采样中';
+  byId('statEngine').textContent=gl&&program?'WEBGL + 2D':'CANVAS 2D';
+  byId('statCanvas').textContent=canvas.width+'×'+canvas.height+' / '+overlay.width+'×'+overlay.height;
+ }
+}
+byId('perfBtn').addEventListener('click',()=>perfToggle());
+byId('perfClose').addEventListener('click',()=>perfToggle(false));
+function perfSample(ms,interval,renderMs){
+ if(!perfMon.open)return;
+ if(!perfMon.t0)perfMon.t0=ms;
+ perfMon.frames++;perfMon.drawMs+=renderMs;
+ if(interval>50)perfMon.stutter++;
+ const duration=ms-perfMon.t0;
+ if(duration<1000)return;
+ const fps=perfMon.frames*1000/Math.max(1,duration);
+ const fpsEl=byId('statFps');
+ fpsEl.textContent=fps.toFixed(1);fpsEl.classList.toggle('warn',fps<45);
+ byId('statFrame').textContent=(duration/perfMon.frames).toFixed(1)+' ms';
+ byId('statDraw').textContent=(perfMon.drawMs/perfMon.frames).toFixed(1)+' ms';
+ byId('statStutter').textContent=perfMon.stutter+' / s';
+ const mem=performance.memory; // Chromium-specific, approximate JavaScript heap only.
+ if(mem&&typeof mem.usedJSHeapSize==='number'){
+  const used=(mem.usedJSHeapSize/1048576).toFixed(1);
+  const alloc=typeof mem.totalJSHeapSize==='number'?' / '+(mem.totalJSHeapSize/1048576).toFixed(0):'';
+  byId('statHeap').textContent=used+alloc+' MB';
+ }else byId('statHeap').textContent='N/A';
+ byId('statCanvas').textContent=canvas.width+'×'+canvas.height+' / '+overlay.width+'×'+overlay.height;
+ perfMon.history.push(fps);
+ if(perfMon.history.length>24)perfMon.history.shift();
+ byId('perfChart').innerHTML=perfMon.history.map(n=>'<i class="'+(n<45?'warn':'')+'" style="height:'+Math.max(5,Math.min(100,n/60*100)).toFixed(1)+'%"></i>').join('');
+ perfMon.t0=ms;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;
+}
+
 let uiTime=0;
 function updateUI(){byId('bassBar').style.width=(8+bass*87)+'%';byId('midBar').style.width=(8+mid*87)+'%';byId('trebleBar').style.width=(8+treble*87)+'%';
 byId('bassText').textContent=String(Math.round(bass*99)).padStart(2,'0');byId('midText').textContent=String(Math.round(mid*99)).padStart(2,'0');byId('trebleText').textContent=String(Math.round(treble*99)).padStart(2,'0');
 byId('stability').textContent=(99.68+.29*Math.abs(Math.sin(now*.074))).toFixed(2);
 const d=new Date();byId('clock').textContent=d.toLocaleTimeString('en-GB',{hour12:false});}
 function loop(ms){requestAnimationFrame(loop);if(pause)return;
- if(!last)last=ms;const dt=Math.min(.05,(ms-last)/1000);last=ms;now+=dt;
+ if(!last)last=ms;const rawInterval=ms-last;const dt=Math.min(.05,rawInterval/1000);last=ms;now+=dt;
+ const startRender=perfMon.open?performance.now():0;
  readAudio(now);let smoothing=1-Math.exp(-dt*9.5);bass=lerp(bass,targetBass,smoothing);mid=lerp(mid,targetMid,smoothing);treble=lerp(treble,targetTreble,smoothing);
  tiltX=lerp(tiltX,mouseX,.025);tiltY=lerp(tiltY,mouseY,.025);
  if(gl&&program){gl.useProgram(program);gl.uniform2f(uRes,canvas.width,canvas.height);gl.uniform1f(uTime,now);gl.uniform3f(uAudio,bass,mid,treble);gl.uniform2f(uDrift,tiltX,tiltY);gl.drawArrays(gl.TRIANGLES,0,6);}
  drawOverlay(now);
+ if(perfMon.open)perfSample(ms,rawInterval,performance.now()-startRender);
  if(now-uiTime>.2){updateUI();uiTime=now;}
 }
 requestAnimationFrame(loop);

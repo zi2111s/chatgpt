@@ -64,7 +64,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v1.3 — minimalist, text-free wallpaper., offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v1.5 — jeweled time pointers on the original three-dimensional orbits., offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -189,12 +189,22 @@ function resize(){W=innerWidth;H=innerHeight;D=Math.min(devicePixelRatio||1,1.5)
 addEventListener('resize',resize);resize();
 
 // --------------------- Orbital geometry + ion particles ---------------------
+// V1.5: True 3D precessing rings. The jeweled time hands are attached to
+// these very same ring surfaces; ring rotation never freezes or flattens.
 const orbitConfigs=[
- {radius:1.04,ax:1.05,ay:.24,az:.10,color:'#66dfff',width:1.35,speed:.37},
- {radius:1.16,ax:.16,ay:.96,az:.64,color:'#87c7f2',width:1.12,speed:-.29},
- {radius:.86,ax:.67,ay:.42,az:-.63,color:'#ffbe7b',width:1.38,speed:.43},
- {radius:1.32,ax:.42,ay:-.52,az:.20,color:'#45a3cd',width:.76,speed:-.21},
+ {unit:'hour',radius:.86,ax:.67,ay:.42,az:-.63,color:'#f6bc79',accent:'#ffebbb',width:1.38,speed:.082,dots:12},
+ {unit:'minute',radius:1.04,ax:1.05,ay:.24,az:.10,color:'#66dfff',accent:'#bbf4ff',width:1.35,speed:-.095,dots:60},
+ {unit:'second',radius:1.16,ax:.16,ay:.96,az:.64,color:'#d9eeff',accent:'#fff9e5',width:1.12,speed:.112,dots:60}
 ];
+const clockFraction={hour:0,minute:0,second:0};
+function syncClock(){
+ const d=new Date(),second=d.getSeconds()+d.getMilliseconds()/1000;
+ const minute=d.getMinutes()+second/60;
+ clockFraction.second=second/60;
+ clockFraction.minute=minute/60;
+ clockFraction.hour=(d.getHours()%12+minute/60)/12;
+}
+
 function spin3(x,y,z,ax,ay,az){let cy=Math.cos(ay),sy=Math.sin(ay),cx=Math.cos(ax),sx=Math.sin(ax),cz=Math.cos(az),sz=Math.sin(az);
  let x1=x*cy+z*sy,z1=-x*sy+z*cy;let y1=y*cx-z1*sx,z2=y*sx+z1*cx;return [x1*cz-y1*sz,x1*sz+y1*cz,z2];}
 function project(x,y,z){let s=3.2/(3.2+z*.38);return [CX+x*scale*s,CY+y*scale*s,z]}
@@ -204,30 +214,100 @@ const stars=Array.from({length:360},()=>({x:rng(),y:rng(),r:.3+rng()*1.3,b:rng()
 const ions=Array.from({length:1300},(_,i)=>({r:.26+Math.pow(rng(),.55)*1.23,a:rng()*6.283,plane:(rng()-.5)*.28,size:.35+rng()*1.35,speed:(.22+rng()*.28)*(rng()>.13?1:-1),gold:rng()>.68,seed:rng()*10}));
 const sparks=Array.from({length:88},()=>({a:rng()*6.28,r:.35+rng()*1.04,ph:rng()*6.28,gold:rng()>.5}));
 function lineArc(points,color,width,alpha,blur){ctx.save();ctx.lineJoin='round';ctx.strokeStyle=color;ctx.lineWidth=width;ctx.globalAlpha=alpha;ctx.shadowColor=color;ctx.shadowBlur=blur;ctx.beginPath();for(let i=0;i<points.length;i++){let p=points[i];if(i===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);}ctx.stroke();ctx.restore()}
-function drawOrbit(o,t,front){const pts=[];const amp=1+audioStrength()*.035;
- // All three axes evolve independently, making the gyroscopic structure visibly move.
- const tiltA=o.ax+Math.sin(t*.19+o.radius*3.)*.14;
- const tiltZ=o.az+Math.sin(t*.13+o.radius*2.)*.12;
- const tiltY=o.ay+t*o.speed;
- 
+function getOrbitPose(o,t){
+ // The familiar gyroscope movement from V1.3 continues, at a quieter speed.
+ return [o.ax+Math.sin(t*.09+o.radius*3)*.095,
+         o.ay+t*o.speed,
+         o.az+Math.sin(t*.065+o.radius*2)*.085];
+}
+function orbitPoint(o,pose,a,radiusFactor=1,amp=1){
+ const v=spin3(Math.cos(a)*o.radius*radiusFactor*amp,
+               Math.sin(a)*o.radius*radiusFactor*amp,0,...pose);
+ return project(...v);
+}
+function drawOrnateHand(o,t,pose,front,amp){
+ // A slim fantasy-jewellery pointer: faceted spearhead, curved metal filigree,
+ // small crystal, restrained warm/cool bloom. No chunky clock-arrow shapes.
+ const fraction=clockFraction[o.unit],a=-Math.PI/2+fraction*TAU;
+ const tip=orbitPoint(o,pose,a,1.065,amp);
+ if(front?tip[2]<0:tip[2]>=0)return;
+ const heel=orbitPoint(o,pose,a,.925,amp);
+ const dx=tip[0]-heel[0],dy=tip[1]-heel[1];
+ const len=Math.hypot(dx,dy);
+ if(len<5)return;
+ const frontAlpha=front?1:.39;
+ ctx.save();ctx.translate(tip[0],tip[1]);ctx.rotate(Math.atan2(dy,dx));
+ ctx.globalAlpha=frontAlpha;ctx.globalCompositeOperation='lighter';
+ ctx.lineJoin='round';ctx.lineCap='round';
+ ctx.shadowColor=o.color;ctx.shadowBlur=front?15:5;
+ const fill=ctx.createLinearGradient(-len,0,0,0);
+ fill.addColorStop(0,'rgba(24,49,73,.19)');
+ fill.addColorStop(.42,o.unit==='hour'?'rgba(188,117,52,.43)':'rgba(67,158,196,.32)');
+ fill.addColorStop(.76,o.unit==='hour'?'rgba(255,210,139,.90)':'rgba(181,237,255,.82)');
+ fill.addColorStop(1,'rgba(255,253,237,.99)');
+ ctx.fillStyle=fill;ctx.strokeStyle=o.color;ctx.lineWidth=.85;
+ // Symmetric etched lance. Delicate leaf shoulders rather than thick arrows.
+ ctx.beginPath();ctx.moveTo(0,0);
+ ctx.bezierCurveTo(-len*.09,-.8,-len*.15,-3.0,-len*.22,-3.1);
+ ctx.lineTo(-len*.36,-1.75);
+ ctx.bezierCurveTo(-len*.53,-2.05,-len*.69,-1.0,-len*.99,0);
+ ctx.bezierCurveTo(-len*.69,1.0,-len*.53,2.05,-len*.36,1.75);
+ ctx.lineTo(-len*.22,3.1);
+ ctx.bezierCurveTo(-len*.15,3.0,-len*.09,.8,0,0);
+ ctx.closePath();ctx.fill();ctx.stroke();
+ // Thin symmetrical gold/silver vine details on either side of the needle.
+ ctx.shadowBlur=front?5:0;ctx.strokeStyle=o.accent;ctx.lineWidth=.7;
+ for(const sign of [-1,1]){
+  ctx.beginPath();ctx.moveTo(-len*.41,0);
+  ctx.bezierCurveTo(-len*.51,sign*4,-len*.69,sign*5.5,-len*.68,sign*.9);
+  ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-len*.24,sign*2);
+  ctx.quadraticCurveTo(-len*.35,sign*5.5,-len*.45,sign*2);ctx.stroke();
+ }
+ // The point of the hand is the exact time position along the moving 3D ring.
+ ctx.strokeStyle='#fff7d8';ctx.lineWidth=.65;
+ ctx.beginPath();ctx.moveTo(-len*.18,0);ctx.lineTo(-1.2,0);ctx.stroke();
+ // Faceted miniature diamond, not a large white planet.
+ const gemX=-len*.62,gemR=front?3.35:2.5;
+ ctx.fillStyle=o.unit==='hour'?'#ffe5a4':'#c0efff';
+ ctx.strokeStyle='#fffdf0';ctx.lineWidth=.55;
+ ctx.beginPath();ctx.moveTo(gemX+gemR,0);ctx.lineTo(gemX,gemR*.65);
+ ctx.lineTo(gemX-gemR,0);ctx.lineTo(gemX,-gemR*.65);ctx.closePath();ctx.fill();ctx.stroke();
+ ctx.fillStyle='#fffdf2';ctx.beginPath();ctx.arc(0,0,1.5,0,TAU);ctx.fill();
+ ctx.restore();
+}
+function drawOrbit(o,t,front){
+ const pose=getOrbitPose(o,t),amp=1+audioStrength()*.035;
+ const pts=[];
+ // The orbit is still a spatial gyroscope, split into front and rear
+ // sections just as in V1.3 so the energy core can occlude its far side.
  for(let i=0;i<=300;i++){
-  let a=i/300*Math.PI*2;
-  let [x,y,z]=spin3(Math.cos(a)*o.radius*amp,Math.sin(a)*o.radius*amp,0,tiltA,tiltY,tiltZ);
-  let p=project(x,y,z);pts.push({p,z});
+  const p=orbitPoint(o,pose,TAU*i/300,1,amp);pts.push(p);
  }
- let run=[];function flush(){if(run.length>1)lineArc(run,o.color,o.width,front?.72:.16,front?15:3);run=[];}
- for(let i=0;i<pts.length;i++){
-  let good=front?(pts[i].z>=0):(pts[i].z<0);
-  if(good)run.push(pts[i].p);else flush();
+ let run=[];
+ function flush(){if(run.length>1)lineArc(run,o.color,o.width,front?.73:.16,front?15:3);run=[];}
+ for(const p of pts){
+  const visible=front?p[2]>=0:p[2]<0;
+  if(visible)run.push(p);else flush();
  }flush();
- // Radial markers on containment coils.
- for(let j=0;j<40;j++){
-  let a=j/40*Math.PI*2+t*o.speed*.8;
-  let out=spin3(Math.cos(a)*o.radius,Math.sin(a)*o.radius,0,tiltA,tiltY,tiltZ);
-  if((front&&out[2]<0)||(!front&&out[2]>=0))continue;
-  const p1=project(out[0]*.987,out[1]*.987,out[2]*.987),p2=project(out[0]*1.013,out[1]*1.013,out[2]*1.013);
-  lineArc([p1,p2],o.color,.8,(j%5===0?.58:.18)*(front?1:.5),3);
+ // Dots are small 'star-planets' physically carried by the rotating ring.
+ // In the ring's own coordinates they mark 12 hours or 60 minutes/seconds.
+ const dots=o.dots;
+ const chosen=Math.floor(clockFraction[o.unit]*dots)%dots;
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ for(let j=0;j<dots;j++){
+  const p=orbitPoint(o,pose,-Math.PI/2+j/dots*TAU,1,amp);
+  if(front?p[2]<0:p[2]>=0)continue;
+  const major=dots===12||j%5===0;
+  const selected=j===chosen;
+  const brightness=front?1:.44;
+  ctx.globalAlpha=(selected?.97:major?.69:.42)*brightness;
+  ctx.shadowColor=o.color;ctx.shadowBlur=selected?14:major?6:2;
+  ctx.fillStyle=selected?o.accent:o.color;
+  ctx.beginPath();ctx.arc(p[0],p[1],selected?2.9:major?1.75:1.0,0,TAU);ctx.fill();
  }
+ ctx.restore();
+ drawOrnateHand(o,t,pose,front,amp);
 }
 function audioStrength(){return Math.min(1,bass*.75+mid*.4+treble*.25)}
 function drawNebulaFallback(){let g=ctx.createRadialGradient(CX,CY,0,CX,CY,scale*1.8);g.addColorStop(0,'#092b49');g.addColorStop(.38,'#05152b');g.addColorStop(1,'#010510');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
@@ -332,28 +412,7 @@ function drawCoreOrnament(t){
  ctx.restore();
 }
 
-function drawOrbitParticles(t){
- ctx.save();ctx.globalCompositeOperation='lighter';
- // Bright ion packets, with directional taper, racing along each moving 3D orbit.
- for(const o of orbitConfigs.slice(0,3)){
-  for(let j=0;j<6;j++){
-   let head=(j/6)*TAU+t*(.72+Math.abs(o.speed)*.5)*(o.speed>0?1:-1);
-   let lastPoint=null;
-   const aa=o.ax+Math.sin(t*.19+o.radius*3.)*.14;
-   const zz=o.az+Math.sin(t*.13+o.radius*2.)*.12;
-   for(let k=17;k>=0;k--){
-    const phase=head-k*.017*(o.speed>0?1:-1);
-    const v=spin3(Math.cos(phase)*o.radius,Math.sin(phase)*o.radius,0,aa,o.ay+t*o.speed,zz);
-    const pt=project(...v);
-    if(lastPoint){ctx.strokeStyle=o.color;ctx.globalAlpha=(1-k/19)*.39;ctx.lineWidth=k<3?2.1:.8;ctx.shadowBlur=k<4?12:0;ctx.shadowColor=o.color;
-     ctx.beginPath();ctx.moveTo(lastPoint[0],lastPoint[1]);ctx.lineTo(pt[0],pt[1]);ctx.stroke();}
-    lastPoint=pt;
-   }
-   if(lastPoint){ctx.globalAlpha=.9;ctx.shadowBlur=22;ctx.shadowColor=o.color;ctx.fillStyle='#ecfcff';ctx.beginPath();ctx.arc(lastPoint[0],lastPoint[1],2.5,0,TAU);ctx.fill();}
-  }
- }
- ctx.restore();
-}
+// Decorative racing packets removed to make clock ticks and ornate pointers legible.
 function drawShockwaves(t){
  // Each pulse begins at the containment shell and traverses the outer reactor.
  ctx.save();ctx.globalCompositeOperation='lighter';
@@ -430,12 +489,12 @@ function drawReticles(t){ctx.save();ctx.translate(CX,CY);ctx.strokeStyle='rgba(8
  ctx.rotate(-t*.12);for(let k=0;k<12;k++){
  let a=k*Math.PI/6;ctx.save();ctx.rotate(a);ctx.strokeStyle=k%3?'rgba(88,204,238,.2)':'rgba(255,196,119,.39)';ctx.beginPath();ctx.moveTo(scale*.245,0);ctx.lineTo(scale*(k%3?.266:.293),0);ctx.stroke();ctx.restore();}
  ctx.restore();}
-function drawOverlay(t){ctx.clearRect(0,0,W,H);if(!gl||!program)drawNebulaFallback();
+function drawOverlay(t){syncClock();ctx.clearRect(0,0,W,H);if(!gl||!program)drawNebulaFallback();
  drawStars(t);drawBeams(t);drawShockwaves(t);drawPlasmaDisk(t);
  for(const o of orbitConfigs)drawOrbit(o,t,false);
  drawEnergyVortex(t);drawIons(t);drawCoreOrnament(t);drawLightning(t);drawReticles(t);drawCorona(t);
  for(const o of orbitConfigs)drawOrbit(o,t,true);
- drawOrbitParticles(t);
+
 }
 
 // --------------------------- Wallpaper Engine audio ----------------------------

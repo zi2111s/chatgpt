@@ -66,7 +66,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v2.1 — Meteor Resonance refined, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v2.2 — Captured Stardust & Rare Comets, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -88,13 +88,13 @@ let mouseX=0,mouseY=0,tiltX=0,tiltY=0;
 // --- Meteor Resonance V2.1: refined stone, deliberate interactions, bounded pools ---
 // Arrays remain capped for long-running wallpapers. All motion uses frame dt.
 const interact={
- on:true,meteors:[],dust:[],rings:[],hover:null,next:now+5,id:0,
+ on:true,meteors:[],dust:[],rings:[],captured:[],comet:null,hover:null,next:now+5,nextComet:now+90,id:0,
  quality:1,qualityWindow:0,qualityFrames:0,qualityLow:0,qualityHigh:0,
- coreResonance:0,coreSourceX:0,coreSourceY:0
+ coreResonance:0,coreSourceX:0,coreSourceY:0,capturePulse:0
 };
 const pointer={x:0,y:0,inside:false,moved:-9999};
 let frameDelta=1/60;
-const METEOR_MAX=2,DUST_MAX=64,RING_MAX=3;
+const METEOR_MAX=2,DUST_MAX=64,RING_MAX=3,CAPTURE_MAX=18;
 function meteorHit(x,y){
  if(!interact.on)return null;
  for(let i=interact.meteors.length-1;i>=0;i--){
@@ -114,8 +114,9 @@ function setMeteorMode(on){
  interact.on=typeof on==='boolean'?on:!interact.on;
  if(!interact.on){
   interact.meteors.length=0;interact.dust.length=0;interact.rings.length=0;
+  interact.captured.length=0;interact.comet=null;interact.capturePulse=0;
   interact.hover=null;interact.coreResonance=0;
- }else interact.next=now+3+Math.random()*4;
+ }else{interact.next=now+3+Math.random()*4;planComet(true);}
  const btn=byId('meteorBtn');
  btn.textContent=interact.on?'☄':'○';
  btn.setAttribute('aria-pressed',String(interact.on));
@@ -152,10 +153,13 @@ function spawnMeteor(){
 function releaseMeteorFragments(m){
  const cap=interact.quality===1?24:14;
  const count=Math.min(DUST_MAX-interact.dust.length,12+Math.floor(Math.random()*13),cap);
+ const quota=Math.min(interact.quality?4:2,CAPTURE_MAX-interact.captured.length,Math.floor(count/4));
+ let captured=0;
  for(let k=0;k<count;k++){
   const a=k/Math.max(1,count)*TAU+(Math.random()-.5)*.34;
   const speed=45+Math.random()*86;
   const ttl=.55+Math.random()*.65;
+  if(k%5===0&&captured<quota&&captureFragment(m,a)){captured++;continue;}
   interact.dust.push({
    x:m.x,y:m.y,vx:Math.cos(a)*speed+m.vx*.13,
    vy:Math.sin(a)*speed+m.vy*.13,life:ttl,ttl,
@@ -193,6 +197,11 @@ function sampleInteractionQuality(dt){
 function tickInteraction(dt){
  if(!interact.on)return;
  sampleInteractionQuality(dt);
+ tickCelestial(dt);
+ if(now>=interact.nextComet){
+  if(!interact.comet&&interact.quality===1)spawnComet();
+  planComet();
+ }
  interact.coreResonance=Math.max(0,interact.coreResonance-dt*1.12);
  if(now>=interact.next){
   if(interact.meteors.length<METEOR_MAX)spawnMeteor();
@@ -241,6 +250,109 @@ function tickInteraction(dt){
  }
  refreshAim();
 }
+
+// V2.2: selected debris becomes core-bound; a rare comet visits the background.
+function captureFragment(m,a){
+ if(interact.captured.length>=18)return false;
+ const x=m.x+Math.cos(a)*m.r*.45,y=m.y+Math.sin(a)*m.r*.45;
+ const dx=x-CX,dy=y-CY;
+ interact.captured.push({x,y,px:x,py:y,radius:Math.hypot(dx,dy),angle:Math.atan2(dy,dx),
+  spin:(Math.random()<.5?-1:1)*(.7+Math.random()*.4),age:0,ttl:1.6+Math.random()*.8,
+  size:.8+Math.random()*1.15,gold:m.gold});
+ return true;
+}
+function planComet(initial=false){
+ const idle=!pointer.inside||now-pointer.moved>45;
+ interact.nextComet=now+(initial?55+Math.random()*65:idle?175+Math.random()*105:125+Math.random()*95);
+}
+function spawnComet(){
+ if(!interact.on||interact.comet)return false;
+ const horizontal=Math.random()<.75,dir=Math.random()<.5?1:-1;
+ const lane=.08+Math.random()*.13,low=Math.random()<.5;
+ let x,y,tx,ty;
+ if(horizontal){
+  x=dir>0?-160:W+160;y=H*(low?1-lane:lane);
+  tx=dir>0?W+165:-165;ty=y+(Math.random()-.5)*H*.07;
+ }else{
+  y=dir>0?-160:H+160;x=W*(low?1-lane:lane);
+  ty=dir>0?H+165:-165;tx=x+(Math.random()-.5)*W*.07;
+ }
+ const d=Math.hypot(tx-x,ty-y),speed=125+Math.random()*50;
+ interact.comet={x,y,vx:(tx-x)/d*speed,vy:(ty-y)/d*speed,
+  age:0,ttl:d/speed+1,head:2.5+Math.random(),
+  tail:clamp(Math.min(W,H)*(.09+Math.random()*.046),60,155),
+  seed:Math.random()*TAU,gold:Math.random()<.18};
+ return true;
+}
+function tickCelestial(dt){
+ interact.capturePulse=Math.max(0,interact.capturePulse-dt*1.05);
+ for(let i=interact.captured.length-1;i>=0;i--){
+  const p=interact.captured[i];p.age+=dt;
+  if(p.age>=p.ttl){
+   interact.captured.splice(i,1);
+   interact.capturePulse=Math.min(.6,interact.capturePulse+.18);
+   continue;
+  }
+  const f=clamp(p.age/p.ttl,0,1),ease=f*f*(3-2*f);
+  const r=p.radius*(1-ease),a=p.angle+p.spin*ease;
+  p.px=p.x;p.py=p.y;p.x=CX+Math.cos(a)*r;p.y=CY+Math.sin(a)*r;
+ }
+ const c=interact.comet;
+ if(c){
+  c.age+=dt;c.x+=c.vx*dt;c.y+=c.vy*dt;
+  if(c.age>c.ttl||c.x< -280||c.x>W+280||c.y< -280||c.y>H+280)interact.comet=null;
+ }
+}
+function drawCaptured(){
+ if(!interact.captured.length&&!interact.capturePulse)return;
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ for(const p of interact.captured){
+  const f=p.age/p.ttl,alpha=clamp(Math.min(f*8,1,(1-f)*7),0,1)*.73;
+  const col=p.gold?'255,211,153':'149,225,250';
+  ctx.strokeStyle='rgba('+col+','+(alpha*.26)+')';ctx.lineWidth=.8;
+  ctx.beginPath();ctx.moveTo(p.px,p.py);ctx.lineTo(p.x,p.y);ctx.stroke();
+  ctx.fillStyle='rgba('+col+','+alpha+')';
+  ctx.beginPath();ctx.arc(p.x,p.y,p.size*(1-.4*f),0,TAU);ctx.fill();
+ }
+ if(interact.capturePulse>.004){
+  const p=interact.capturePulse;
+  ctx.strokeStyle='rgba(154,221,249,'+(p*.22)+')';
+  ctx.lineWidth=.6+p*.8;ctx.beginPath();
+  ctx.arc(CX,CY,scale*(.32+.08*(1-p)),0,TAU);ctx.stroke();
+ }
+ ctx.restore();
+}
+function drawComet(t){
+ const c=interact.comet;if(!interact.on||!c)return;
+ const alpha=clamp(c.age/1.2,0,1)*clamp((c.ttl-c.age)/1.1,0,1);
+ const mag=Math.hypot(c.vx,c.vy)||1,ux=c.vx/mag,uy=c.vy/mag,nx=-uy,ny=ux;
+ const length=c.tail*(interact.quality===0?.65:1);
+ let bend=0;
+ if(pointer.inside){
+  const d=Math.hypot(pointer.x-c.x,pointer.y-c.y);
+  if(d<220)bend=(pointer.x-c.x)*.04*(1-d/220);
+ }
+ const sx=c.x-ux*length+nx*bend,sy=c.y-uy*length+ny*bend;
+ ctx.save();ctx.globalAlpha=alpha;ctx.globalCompositeOperation='lighter';
+ const grad=ctx.createLinearGradient(sx,sy,c.x,c.y);
+ grad.addColorStop(0,'rgba(104,181,229,0)');
+ grad.addColorStop(.62,c.gold?'rgba(255,202,141,.04)':'rgba(133,209,248,.04)');
+ grad.addColorStop(1,c.gold?'rgba(255,224,164,.35)':'rgba(178,231,255,.33)');
+ ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(sx,sy);
+ ctx.quadraticCurveTo(c.x-ux*length*.45+nx*Math.sin(t+c.seed)*3,
+  c.y-uy*length*.45+ny*Math.sin(t+c.seed)*3,c.x+nx*1.4,c.y+ny*1.4);
+ ctx.lineTo(c.x-nx*1.4,c.y-ny*1.4);ctx.closePath();ctx.fill();
+ ctx.strokeStyle=c.gold?'rgba(255,217,158,.25)':'rgba(175,227,252,.26)';
+ ctx.lineWidth=.65;ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(c.x,c.y);ctx.stroke();
+ ctx.shadowColor=c.gold?'#ffe7b9':'#a8e6ff';ctx.shadowBlur=interact.quality?8:2;
+ const core=ctx.createRadialGradient(c.x,c.y,0,c.x,c.y,c.head*3.5);
+ core.addColorStop(0,'rgba(255,255,247,.91)');
+ core.addColorStop(.38,c.gold?'rgba(255,220,165,.45)':'rgba(181,233,255,.48)');
+ core.addColorStop(1,'rgba(118,205,255,0)');
+ ctx.fillStyle=core;ctx.beginPath();ctx.arc(c.x,c.y,c.head*3.5,0,TAU);ctx.fill();
+ ctx.restore();
+}
+
 const METEOR_PALETTES={
  dark:{light:'#536d82',mid:'#2b3c4e',shade:'#101b2a',edge:'#6899ac',crack:'#78cced',facets:['#3b5061','#1a2b3b','#293c4e','#122438']},
  ice:{light:'#7aafc9',mid:'#305873',shade:'#0b253d',edge:'#98e2f7',crack:'#b4f3ff',facets:['#497a99','#153955','#2b607d','#16364e']},
@@ -346,6 +458,7 @@ function paintMeteors(t){
   ctx.lineWidth=1.4*(1-phase)+.3;ctx.beginPath();
   ctx.arc(r.x,r.y,r.base+phase*25,0,TAU);ctx.stroke();
  }
+ drawCaptured();
  // Only rare gold stones can briefly send a fine luminous thread to the core.
  if(interact.coreResonance>.001){
   const strength=interact.coreResonance;
@@ -725,7 +838,7 @@ function drawCoreOrnament(t){
 function drawOverlay(t){
  ctx.clearRect(0,0,W,H);
  if(!gl||!program)drawNebulaFallback();
- drawStars(t);drawBeams(t);drawPlasmaDisk(t);
+ drawStars(t);drawComet(t);drawBeams(t);drawPlasmaDisk(t);
  for(const o of orbitConfigs)drawOrbit(o,t,false);
  drawIons(t);
  drawCoreOrnament(t);

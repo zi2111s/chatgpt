@@ -98,7 +98,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v3.1 — Combo Scoring, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.2 — Active Meteor Density, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -198,6 +198,44 @@ const interact={
  coreResonance:0,coreSourceX:0,coreSourceY:0,capturePulse:0
 };
 const pointer={x:0,y:0,inside:false,moved:-9999};
+// V3.2 spawn pacing only — intentional mouse activity increases encounters,
+// with no aim assist, impulse, shockwave or change to collision detection.
+const playDensity={
+ until:-10000,travel:0,lastX:null,lastY:null,lastMotion:-10000
+};
+function activePlay(){
+ return interact.on&&pointer.inside&&now<playDensity.until;
+}
+function markPlayActivity(){
+ if(!interact.on)return;
+ const wasPlaying=activePlay();
+ playDensity.until=now+20;
+ // Re-engagement shouldn't wait out a pre-existing 25–38 second idle timer.
+ if(!wasPlaying)interact.next=Math.min(interact.next,now+.85+Math.random()*.45);
+}
+function noteMouseTravel(x,y){
+ if(!interact.on)return;
+ if(playDensity.lastX===null){playDensity.lastX=x;playDensity.lastY=y;playDensity.lastMotion=now;return;}
+ if(now-playDensity.lastMotion>2.2)playDensity.travel=0;
+ const d=Math.hypot(x-playDensity.lastX,y-playDensity.lastY);
+ playDensity.lastX=x;playDensity.lastY=y;
+ if(d<2)return;
+ playDensity.lastMotion=now;
+ // Several deliberate movements, not a single cursor teleport.
+ playDensity.travel+=Math.min(d,36);
+ if(playDensity.travel>=115){
+  playDensity.travel=0;markPlayActivity();
+ }
+}
+function nextMeteorDelay(engaged){
+ if(engaged){
+  // Fill the first three naturally, then slow slightly near the five-rock cap.
+  return interact.meteors.length<3?2.7+Math.random()*1.6:4.0+Math.random()*2.3;
+ }
+ const quiet=!pointer.inside||now-pointer.moved>45;
+ return quiet?25+Math.random()*13:12+Math.random()*10;
+}
+
 // V3.0: hold to draw nearby meteors; release preserves their velocity.
 const sling={down:false,active:false,held:0,start:0,x0:0,y0:0,ignore:0,radius:420};
 function slingDown(e){
@@ -205,6 +243,7 @@ function slingDown(e){
  pointer.x=e.clientX;pointer.y=e.clientY;pointer.inside=true;pointer.moved=now;
  sling.down=true;sling.active=false;sling.held=0;sling.start=performance.now();
  sling.x0=pointer.x;sling.y0=pointer.y;
+ markPlayActivity();
 }
 function slingUp(){
  if(!sling.down)return;
@@ -292,6 +331,7 @@ function setMeteorMode(on){
   interact.captured.length=0;interact.comet=null;interact.capturePulse=0;
   interact.hover=null;interact.coreResonance=0;
   slingUp();sling.ignore=0;
+  playDensity.until=-10000;playDensity.travel=0;
  }else{interact.next=now+3+Math.random()*4;planComet(true);}
  const btn=byId('meteorBtn');
  btn.textContent=interact.on?'☄':'○';
@@ -377,6 +417,7 @@ function sampleInteractionQuality(dt){
 function tickInteraction(dt){
  if(!interact.on)return;
  if(sling.down){sling.held+=dt;
+  if(sling.active)playDensity.until=now+20;
   if(sling.held>=.18||Math.hypot(pointer.x-sling.x0,pointer.y-sling.y0)>14)sling.active=true;}
  sampleInteractionQuality(dt);
  tickCelestial(dt);
@@ -386,9 +427,9 @@ function tickInteraction(dt){
  }
  interact.coreResonance=Math.max(0,interact.coreResonance-dt*1.12);
  if(now>=interact.next){
-  if(interact.meteors.length<(pointer.inside&&now-pointer.moved<32?METEOR_MAX:2))spawnMeteor();
-  const idle=!pointer.inside||now-pointer.moved>45;
-  interact.next=now+(idle?25+Math.random()*13:7+Math.random()*7);
+  const engaged=activePlay();
+  if(interact.meteors.length<(engaged?METEOR_MAX:2))spawnMeteor();
+  interact.next=now+nextMeteorDelay(engaged);
  }
  const smoothing=1-Math.exp(-dt*9.8);
  for(let i=interact.meteors.length-1;i>=0;i--){
@@ -1108,6 +1149,7 @@ addEventListener('pointerup',slingUp);
 addEventListener('mouseup',slingUp);
 addEventListener('pointercancel',slingUp);
 addEventListener('mousemove',e=>{
+ noteMouseTravel(e.clientX,e.clientY);
  mouseX=(e.clientX/W-.5)*2;mouseY=(e.clientY/H-.5)*2;
  pointer.x=e.clientX;pointer.y=e.clientY;pointer.inside=true;pointer.moved=now;
  refreshAim();

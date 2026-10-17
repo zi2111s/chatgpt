@@ -21,6 +21,8 @@
   .toast{position:fixed;top:9vh;left:50%;z-index:20;transform:translateX(-50%);border:1px solid #396879;background:#031b2ad9;color:#c1f3ff;padding:8px 17px;font:11px Consolas,monospace;letter-spacing:.1em;opacity:0;transition:opacity .5s;pointer-events:none}
   @media(max-width:600px){.interface{right:12px;bottom:24px}}
   .ui-off .interface{display:none}
+  body.meteor-aim{cursor:crosshair}
+  .interface button[aria-pressed="false"]{color:rgba(148,183,202,.48)}
 
 /* Optional V1.2 performance monitor. Press P, or use PERF button. */
 .perf-panel{display:none;position:fixed;z-index:15;top:116px;right:28px;width:265px;padding:14px 16px;border:1px solid rgba(112,218,245,.32);border-radius:6px;
@@ -44,7 +46,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <canvas id="space"></canvas>
 <canvas id="orbits"></canvas>
 <div class="filmgrain"></div><div class="vignette"></div>
-<div class="interface" aria-label="壁纸操作按钮"><button id="demoBtn" aria-label="演示脉冲" title="模拟音乐节拍">◈</button><label aria-label="导入本地音乐" title="导入本地音乐">♫<input type="file" id="audioFile" accept="audio/*"></label><button id="hudBtn" aria-label="隐藏操作按钮" title="隐藏操作按钮（按H恢复）">◻</button><button id="perfBtn" aria-label="性能监视" title="性能监视（按P开关）">▤</button></div>
+<div class="interface" aria-label="壁纸操作按钮"><button id="demoBtn" aria-label="演示脉冲" title="模拟音乐节拍">◈</button><label aria-label="导入本地音乐" title="导入本地音乐">♫<input type="file" id="audioFile" accept="audio/*"></label><button id="hudBtn" aria-label="隐藏操作按钮" title="隐藏操作按钮（按H恢复）">◻</button><button id="perfBtn" aria-label="性能监视" title="性能监视（按P开关）">▤</button><button id="meteorBtn" type="button" aria-pressed="true" aria-label="陨石互动" title="陨石互动（M切换）">☄</button></div>
 
 <div class="perf-panel" id="perfPanel" aria-label="性能监视面板">
   <div class="perf-head"><span>◈ PERFORMANCE / LIVE</span><button id="perfClose" type="button" title="关闭性能面板">×</button></div>
@@ -64,7 +66,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v1.9 — quiet faceted time needles, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v2.0 — Meteor Resonance, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -82,6 +84,156 @@ let W=innerWidth,H=innerHeight,D=1,CX=0,CY=0,scale=1;
 let now=0,last=0,pause=false,frame=0,hasWallpaperAudio=false,lastWallpaperAudio=-10000;
 let bass=0,mid=0,treble=0,targetBass=0,targetMid=0,targetTreble=0,demo=false,audioSource=false;
 let mouseX=0,mouseY=0,tiltX=0,tiltY=0;
+
+// --- Meteor Resonance V2.0: capped interaction pools, no interval timers ---
+const interact={on:true,meteors:[],dust:[],rings:[],hover:null,next:now+5,id:0};
+const pointer={x:0,y:0,inside:false,moved:-9999};
+let frameDelta=1/60;
+function meteorHit(x,y){
+ if(!interact.on)return null;
+ for(let i=interact.meteors.length-1;i>=0;i--){
+  const m=interact.meteors[i],dx=x-m.x,dy=y-m.y;
+  if(dx*dx+dy*dy<Math.pow(Math.max(19,m.r*1.6),2))return m;
+ }
+ return null;
+}
+function refreshAim(){
+ interact.hover=interact.on&&pointer.inside?meteorHit(pointer.x,pointer.y):null;
+ document.body.classList.toggle('meteor-aim',!!interact.hover);
+}
+function setMeteorMode(on){
+ interact.on=typeof on==='boolean'?on:!interact.on;
+ if(!interact.on){interact.meteors.length=0;interact.dust.length=0;interact.rings.length=0;interact.hover=null;}
+ else interact.next=now+3+Math.random()*4;
+ const btn=byId('meteorBtn');
+ btn.textContent=interact.on?'☄':'○';
+ btn.setAttribute('aria-pressed',String(interact.on));
+ btn.title=interact.on?'陨石互动已开启（M关闭）':'陨石互动已关闭（M开启）';
+ btn.setAttribute('aria-label',btn.title);
+ refreshAim();
+}
+function spawnMeteor(){
+ if(interact.meteors.length>=2)return;
+ let x,y,ex,ey;
+ const horizontal=Math.random()<.5,reverse=Math.random()<.5;
+ const lane=.10+Math.random()*.16,far=Math.random()<.5;
+ if(horizontal){
+  y=H*(far?1-lane:lane);
+  x=reverse?W+35:-35;ex=reverse?-50:W+50;
+  ey=y+(Math.random()-.5)*H*.10;
+ }else{
+  x=W*(far?1-lane:lane);
+  y=reverse?H+35:-35;ey=reverse?-50:H+50;
+  ex=x+(Math.random()-.5)*W*.10;
+ }
+ const dist=Math.hypot(ex-x,ey-y),speed=40+Math.random()*27;
+ interact.meteors.push({id:++interact.id,x,y,vx:(ex-x)/dist*speed,
+  vy:(ey-y)/dist*speed,r:11+Math.random()*10,age:0,
+  maxAge:(dist+95)/speed,seed:Math.random()*TAU,
+  gold:Math.random()<.24,spin:(Math.random()-.5)*.16});
+}
+function shatterMeteor(m){
+ const i=interact.meteors.indexOf(m);if(i<0)return;
+ interact.meteors.splice(i,1);
+ const count=Math.min(20,64-interact.dust.length);
+ for(let k=0;k<count;k++){
+  const a=k/Math.max(1,count)*TAU+(Math.random()-.5)*.35;
+  const sp=40+Math.random()*70,ttl=.48+Math.random()*.48;
+  interact.dust.push({x:m.x,y:m.y,vx:Math.cos(a)*sp+m.vx*.2,
+   vy:Math.sin(a)*sp+m.vy*.2,life:ttl,ttl,r:.75+Math.random()*1.8,
+   gold:m.gold||k%5===0});
+ }
+ if(interact.rings.length>=3)interact.rings.shift();
+ interact.rings.push({x:m.x,y:m.y,base:m.r,life:.48,ttl:.48,gold:m.gold});
+ interact.hover=null;refreshAim();
+}
+function tickInteraction(dt){
+ if(!interact.on)return;
+ if(now>=interact.next){
+  if(interact.meteors.length<2)spawnMeteor();
+  const idle=!pointer.inside||now-pointer.moved>45;
+  interact.next=now+(idle?21+Math.random()*12:12+Math.random()*9);
+ }
+ for(let i=interact.meteors.length-1;i>=0;i--){
+  const m=interact.meteors[i];
+  m.x+=m.vx*dt;m.y+=m.vy*dt;m.age+=dt;
+  if(m.age>m.maxAge||m.x< -130||m.x>W+130||m.y< -130||m.y>H+130)
+   interact.meteors.splice(i,1);
+ }
+ for(let i=interact.dust.length-1;i>=0;i--){
+  const p=interact.dust[i],drag=Math.exp(-dt*2.9);
+  p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=drag;p.vy*=drag;p.life-=dt;
+  if(p.life<=0)interact.dust.splice(i,1);
+ }
+ for(let i=interact.rings.length-1;i>=0;i--){
+  const r=interact.rings[i];r.life-=dt;
+  if(r.life<=0)interact.rings.splice(i,1);
+ }
+ refreshAim();
+}
+function paintMeteor(m,t){
+ ctx.save();ctx.translate(m.x,m.y);ctx.rotate(Math.atan2(m.vy,m.vx));
+ ctx.globalAlpha=clamp(m.age/.65,0,1);
+ const tail=ctx.createLinearGradient(-m.r*3,0,0,0);
+ tail.addColorStop(0,'rgba(69,172,230,0)');
+ tail.addColorStop(1,m.gold?'rgba(248,172,93,.24)':'rgba(97,201,240,.24)');
+ ctx.fillStyle=tail;ctx.beginPath();ctx.moveTo(-m.r*3,0);
+ ctx.lineTo(-m.r*.2,-m.r*.24);ctx.lineTo(-m.r*.2,m.r*.24);ctx.closePath();ctx.fill();
+ ctx.rotate(m.seed+t*m.spin);
+ const rock=ctx.createRadialGradient(-m.r*.3,-m.r*.4,0,0,0,m.r);
+ rock.addColorStop(0,m.gold?'#726151':'#4b6779');
+ rock.addColorStop(.5,m.gold?'#30323c':'#22364a');
+ rock.addColorStop(1,'#080f20');
+ ctx.fillStyle=rock;ctx.strokeStyle=m.gold?'rgba(232,182,112,.60)':'rgba(131,203,229,.56)';
+ ctx.lineWidth=.8;ctx.shadowColor=m.gold?'#c28c5f':'#46b8de';ctx.shadowBlur=3;
+ ctx.beginPath();
+ for(let i=0;i<11;i++){
+  const a=i*TAU/11,r=m.r*(.83+.1*Math.sin(i*5+m.seed)+.05*Math.sin(i*8+m.seed));
+  if(!i)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+ }
+ ctx.closePath();ctx.fill();ctx.stroke();
+ ctx.shadowBlur=0;ctx.strokeStyle=m.gold?'rgba(251,183,102,.58)':'rgba(126,214,244,.50)';
+ ctx.lineWidth=.75;
+ ctx.beginPath();ctx.moveTo(-m.r*.52,-m.r*.33);ctx.lineTo(-m.r*.14,-m.r*.05);
+ ctx.lineTo(m.r*.18,-m.r*.25);ctx.lineTo(m.r*.52,m.r*.23);ctx.stroke();
+ ctx.restore();
+}
+function paintReticle(m,t){
+ const r=m.r+10+Math.sin(t*3)*.8;
+ ctx.save();ctx.translate(m.x,m.y);
+ ctx.strokeStyle=m.gold?'rgba(255,219,171,.90)':'rgba(164,230,251,.91)';
+ ctx.shadowColor=m.gold?'#ffb56c':'#66d9ff';ctx.shadowBlur=6;ctx.lineWidth=1.1;
+ for(let i=0;i<4;i++){
+  const a=i*TAU/4+t*.08;
+  ctx.beginPath();ctx.arc(0,0,r,a+.18,a+.65);ctx.stroke();
+  const x=Math.cos(a)*(r+5),y=Math.sin(a)*(r+5);
+  ctx.beginPath();ctx.moveTo(x+Math.cos(a)*3,y+Math.sin(a)*3);
+  ctx.lineTo(x-Math.sin(a)*2,y+Math.cos(a)*2);
+  ctx.lineTo(x-Math.cos(a)*3,y-Math.sin(a)*3);
+  ctx.lineTo(x+Math.sin(a)*2,y-Math.cos(a)*2);ctx.closePath();ctx.stroke();
+ }
+ ctx.restore();
+}
+function paintMeteors(t){
+ if(!interact.on)return;
+ ctx.save();
+ for(const m of interact.meteors)paintMeteor(m,t);
+ ctx.globalCompositeOperation='lighter';
+ for(const p of interact.dust){
+  const fade=Math.pow(clamp(p.life/p.ttl,0,1),1.3);
+  ctx.fillStyle=p.gold?'rgba(255,196,125,'+(fade*.88)+')':'rgba(121,220,255,'+(fade*.84)+')';
+  ctx.fillRect(p.x,p.y,p.r,p.r);
+ }
+ for(const r of interact.rings){
+  const progress=1-r.life/r.ttl;
+  ctx.strokeStyle=r.gold?'rgba(255,196,110,'+(.33*(1-progress))+')':'rgba(120,224,249,'+(.30*(1-progress))+')';
+  ctx.lineWidth=1.5*(1-progress)+.35;ctx.beginPath();
+  ctx.arc(r.x,r.y,r.base+progress*24,0,TAU);ctx.stroke();
+ }
+ ctx.restore();
+ if(interact.hover)paintReticle(interact.hover,t);
+}
+
 let audioCtx,analyser,srcNode,freqData;
 let toastTimer;
 function toast(str){const el=byId('toast');el.textContent=str;el.style.opacity='1';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.opacity='0',2500)}
@@ -211,7 +363,7 @@ function project(x,y,z){let s=3.2/(3.2+z*.38);return [CX+x*scale*s,CY+y*scale*s,
 // Seeded particle field; deterministic layout on every launch.
 let seed=81321;function rng(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
 const stars=Array.from({length:235},()=>({x:rng(),y:rng(),r:.3+rng()*1.3,b:rng(),phase:rng()*6.28}));
-const ions=Array.from({length:450},(_,i)=>({r:.26+Math.pow(rng(),.55)*1.23,a:rng()*6.283,plane:(rng()-.5)*.28,size:.35+rng()*1.35,speed:(.22+rng()*.28)*(rng()>.13?1:-1),gold:rng()>.68,seed:rng()*10}));
+const ions=Array.from({length:450},(_,i)=>({r:.26+Math.pow(rng(),.55)*1.23,a:rng()*6.283,plane:(rng()-.5)*.28,size:.35+rng()*1.35,speed:(.22+rng()*.28)*(rng()>.13?1:-1),gold:rng()>.68,seed:rng()*10,gx:0,gy:0}));
 function lineArc(points,color,width,alpha,blur){ctx.save();ctx.lineJoin='round';ctx.strokeStyle=color;ctx.lineWidth=width;ctx.globalAlpha=alpha;ctx.shadowColor=color;ctx.shadowBlur=blur;ctx.beginPath();for(let i=0;i<points.length;i++){let p=points[i];if(i===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);}ctx.stroke();ctx.restore()}
 function getOrbitPose(o,t){
  // The familiar gyroscope movement from V1.3 continues, at a quieter speed.
@@ -324,16 +476,30 @@ function audioStrength(){return Math.min(1,bass*.75+mid*.4+treble*.25)}
 function drawNebulaFallback(){let g=ctx.createRadialGradient(CX,CY,0,CX,CY,scale*1.8);g.addColorStop(0,'#092b49');g.addColorStop(.38,'#05152b');g.addColorStop(1,'#010510');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
  let cg=ctx.createRadialGradient(CX,CY,4,CX,CY,scale*.64);cg.addColorStop(0,'#ffcc89');cg.addColorStop(.08,'#a66c41');cg.addColorStop(.32,'#041528');cg.addColorStop(.75,'#0b3355');cg.addColorStop(1,'transparent');ctx.fillStyle=cg;ctx.beginPath();ctx.arc(CX,CY,scale*.65,0,6.283);ctx.fill();}
 function drawStars(t){ctx.save();for(const s of stars){const x=(s.x+Math.sin(t*.018+s.phase)*.0018)*W,y=(s.y+Math.cos(t*.016+s.phase)*.0018)*H,twinkle=.38+.48*(.5+.5*Math.sin(t*(.6+s.b)+s.phase));ctx.fillStyle=s.b>.94?'rgba(255,208,150,'+twinkle+')':'rgba(126,210,239,'+(twinkle*.65)+')';ctx.beginPath();ctx.arc(x,y,s.r*(s.b>.97?1.5:1),0,6.283);ctx.fill();}ctx.restore()}
-function drawIons(t){ctx.save();ctx.globalCompositeOperation='lighter';
- for(const p of ions){let a=p.a+t*p.speed*2.4/(.7+p.r*.7),r=p.r*(1+.032*Math.sin(t*1.8+p.seed));let z=Math.sin(a*1.7+p.seed)*p.plane;
- let [x,y,z1]=spin3(Math.cos(a)*r,Math.sin(a)*r,z,.32,-.17,.28);
- let v=project(x,y,z1);let dist=Math.hypot(v[0]-CX,v[1]-CY)/scale;
- if(dist<.26)continue;
- let aAlpha=clamp(.09+(z1+1)*.18,0,.5)*(.7+audioStrength()*.9);
- if(p.gold){ctx.fillStyle='rgba(255,181,111,'+aAlpha+')';}else{ctx.fillStyle='rgba(78,193,253,'+aAlpha+')';}
- let size=p.size*(.85+audioStrength()*.35);ctx.fillRect(v[0],v[1],size,size);
+function drawIons(t){
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ const field=interact.on&&pointer.inside;
+ const radius=Math.min(W,H)*.205,smooth=1-Math.exp(-frameDelta*6);
+ for(const p of ions){
+  const a=p.a+t*p.speed*2.4/(.7+p.r*.7),r=p.r*(1+.032*Math.sin(t*1.8+p.seed));
+  const z=Math.sin(a*1.7+p.seed)*p.plane;
+  const v3=spin3(Math.cos(a)*r,Math.sin(a)*r,z,.32,-.17,.28);
+  const v=project(...v3);
+  if(Math.hypot(v[0]-CX,v[1]-CY)/scale<.26)continue;
+  let targetX=0,targetY=0;
+  if(field){
+   const dx=pointer.x-v[0],dy=pointer.y-v[1],d=Math.hypot(dx,dy);
+   if(d<radius){const force=.43*Math.pow(1-d/radius,2);
+    targetX=dx*force;targetY=dy*force;}
+  }
+  p.gx+=(targetX-p.gx)*smooth;p.gy+=(targetY-p.gy)*smooth;
+  const alpha=clamp(.09+(v3[2]+1)*.18,0,.5)*(.7+audioStrength()*.9);
+  ctx.fillStyle=p.gold?'rgba(255,181,111,'+alpha+')':'rgba(78,193,253,'+alpha+')';
+  const size=p.size*(.85+audioStrength()*.35);
+  ctx.fillRect(v[0]+p.gx,v[1]+p.gy,size,size);
  }
- ctx.restore();}
+ ctx.restore();
+}
 function drawCorona(t){
  // Only four faint ion glimmers close to the sphere, not new orbital tracks.
  ctx.save();ctx.globalCompositeOperation='lighter';
@@ -435,6 +601,7 @@ function drawOverlay(t){
  drawCoreOrnament(t);
  drawCorona(t);
  for(const o of orbitConfigs)drawOrbit(o,t,true);
+ paintMeteors(t);
 }
 // --------------------------- Wallpaper Engine audio ----------------------------
 // Wallpaper Engine calls this with 64 bands per channel at ~30Hz.
@@ -475,8 +642,19 @@ byId('audioFile').addEventListener('change',async(e)=>{
  }catch(err){toast('音乐加载失败，请检查浏览器音频权限');console.error(err)}
 });
 byId('hudBtn').addEventListener('click',()=>document.body.classList.toggle('ui-off'));
-addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.key.toLowerCase()==='p'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))perfToggle();if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
-addEventListener('mousemove',e=>{mouseX=(e.clientX/W-.5)*2;mouseY=(e.clientY/H-.5)*2},{passive:true});
+addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.key.toLowerCase()==='m'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))setMeteorMode();if(e.key.toLowerCase()==='p'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))perfToggle();if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
+byId('meteorBtn').addEventListener('click',()=>setMeteorMode());
+addEventListener('mousemove',e=>{
+ mouseX=(e.clientX/W-.5)*2;mouseY=(e.clientY/H-.5)*2;
+ pointer.x=e.clientX;pointer.y=e.clientY;pointer.inside=true;pointer.moved=now;
+ refreshAim();
+},{passive:true});
+addEventListener('mouseout',e=>{if(!e.relatedTarget){pointer.inside=false;refreshAim();}});
+addEventListener('blur',()=>{pointer.inside=false;refreshAim();});
+addEventListener('click',e=>{
+ if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel'))return;
+ const meteor=meteorHit(e.clientX,e.clientY);if(meteor)shatterMeteor(meteor);
+});
 addEventListener('visibilitychange',()=>{pause=document.hidden;last=performance.now();perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;});
 
 /* Optional browser-only performance telemetry; GPU/RAM/CPU usage cannot be directly measured here. */
@@ -520,7 +698,8 @@ function perfSample(ms,interval,renderMs){
 }
 
 function loop(ms){requestAnimationFrame(loop);if(pause)return;
- if(!last)last=ms;const rawInterval=ms-last;const dt=Math.min(.05,rawInterval/1000);last=ms;now+=dt;
+ if(!last)last=ms;const rawInterval=ms-last;const dt=Math.min(.05,rawInterval/1000);frameDelta=dt;last=ms;now+=dt;
+ tickInteraction(dt);
  const startRender=perfMon.open?performance.now():0;
  readAudio(now);let smoothing=1-Math.exp(-dt*9.5);bass=lerp(bass,targetBass,smoothing);mid=lerp(mid,targetMid,smoothing);treble=lerp(treble,targetTreble,smoothing);
  tiltX=lerp(tiltX,mouseX,.025);tiltY=lerp(tiltY,mouseY,.025);

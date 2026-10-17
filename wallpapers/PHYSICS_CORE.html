@@ -21,6 +21,22 @@
   .toast{position:fixed;top:9vh;left:50%;z-index:20;transform:translateX(-50%);border:1px solid #396879;background:#031b2ad9;color:#c1f3ff;padding:8px 17px;font:11px Consolas,monospace;letter-spacing:.1em;opacity:0;transition:opacity .5s;pointer-events:none}
   @media(max-width:600px){.interface{right:12px;bottom:24px}}
   .ui-off .interface{display:none}
+
+  .score-dock{position:fixed;z-index:11;bottom:25px;left:24px;opacity:.25;transition:opacity .2s;font:10px/1.5 Consolas,monospace;color:#a6d5e2}
+  .score-dock:hover,.score-dock:focus-within{opacity:1}
+  .score-button{display:flex;flex-direction:column;align-items:flex-start;min-width:145px;border:1px solid #8ccee244;border-radius:5px;background:#031627af;color:inherit;font:inherit;padding:8px 11px;cursor:pointer}
+  .score-button strong{color:#e8f8ff;font-size:16px;font-weight:500}
+  .score-small{font-size:9px;color:#91b5c6}
+  .score-details{display:none;position:absolute;left:0;bottom:calc(100% + 10px);width:256px;max-height:42vh;overflow-y:auto;background:#031325ed;border:1px solid #8ccee255;border-radius:6px;padding:13px;box-shadow:0 12px 30px #0009}
+  .score-details.open{display:block}
+  .score-title{font-size:10px;color:#ffcd98;letter-spacing:.14em;margin-bottom:8px}
+  .score-item{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid #c3eafa21}
+  .score-item b{font-weight:500;color:#eafaff}
+  .score-history-item{border:0;font-size:9px;padding:2px 0}
+  .score-note{color:#86a9ba;font-size:9px;line-height:1.55;margin-top:9px}
+  .ui-off .score-dock{display:none}
+  @media(max-width:600px){.score-dock{left:12px;bottom:24px}.score-details{width:230px}}
+
   body.meteor-aim{cursor:crosshair}
   body.gravity-hold{cursor:grabbing}
   .interface button[aria-pressed="false"]{color:rgba(148,183,202,.48)}
@@ -49,6 +65,21 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <div class="filmgrain"></div><div class="vignette"></div>
 <div class="interface" aria-label="壁纸操作按钮"><button id="demoBtn" aria-label="演示脉冲" title="模拟音乐节拍">◈</button><label aria-label="导入本地音乐" title="导入本地音乐">♫<input type="file" id="audioFile" accept="audio/*"></label><button id="hudBtn" aria-label="隐藏操作按钮" title="隐藏操作按钮（按H恢复）">◻</button><button id="perfBtn" aria-label="性能监视" title="性能监视（按P开关）">▤</button><button id="meteorBtn" type="button" aria-pressed="true" aria-label="陨石互动" title="陨石互动（M切换）">☄</button></div>
 
+<div class="score-dock" id="scoreDock">
+ <button class="score-button" id="scoreButton" type="button" aria-controls="scoreDetails" aria-expanded="false" title="查看本机积分">
+  <span class="score-small">GRAVITY SCORE · 本小时</span><strong id="scoreHour">0</strong>
+  <span class="score-small">累计 <span id="scoreTotal">0</span></span>
+ </button>
+ <div class="score-details" id="scoreDetails">
+  <div class="score-title">◈ LOCAL SCORES / 本机计分</div>
+  <div class="score-item"><span>本小时</span><b id="scoreDetailHour">0</b></div>
+  <div class="score-item"><span>累计总分</span><b id="scoreDetailTotal">0</b></div>
+  <div class="score-item"><span>最高连撞</span><b id="scoreBest">0 颗</b></div>
+  <div class="score-title" style="margin-top:12px">RECENT HOURS · 最近24条</div>
+  <div id="scoreHistory"></div>
+  <div class="score-note" id="scoreNote"></div>
+ </div>
+</div>
 <div class="perf-panel" id="perfPanel" aria-label="性能监视面板">
   <div class="perf-head"><span>◈ PERFORMANCE / LIVE</span><button id="perfClose" type="button" title="关闭性能面板">×</button></div>
   <div class="perf-row"><span>FPS / 帧率</span><b id="statFps">采样中</b></div>
@@ -67,7 +98,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v3.0 — Gravitational Slingshot, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.1 — Combo Scoring, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -85,6 +116,79 @@ let W=innerWidth,H=innerHeight,D=1,CX=0,CY=0,scale=1;
 let now=0,last=0,pause=false,frame=0,hasWallpaperAudio=false,lastWallpaperAudio=-10000;
 let bass=0,mid=0,treble=0,targetBass=0,targetMid=0,targetTreble=0,demo=false,audioSource=false;
 let mouseX=0,mouseY=0,tiltX=0,tiltY=0;
+// V3.1 — On-device scoring; no global leaderboard or network backend.
+const SCORE_STORAGE='physics-core-score-v1';
+const points={total:0,best:0,hours:{},local:true,popup:null};
+function hourBucket(date){
+ const two=n=>String(n).padStart(2,'0');
+ const offset=-date.getTimezoneOffset();
+ return date.getFullYear()+'-'+two(date.getMonth()+1)+'-'+two(date.getDate())+' '+
+  two(date.getHours())+':00 '+(offset>=0?'+':'-')+
+  two(Math.floor(Math.abs(offset)/60))+':'+two(Math.abs(offset)%60);
+}
+function readPoints(){
+ try{
+  const v=window.localStorage?.getItem(SCORE_STORAGE);if(!v)return;
+  const saved=JSON.parse(v);if(!saved||typeof saved!=='object')return;
+  if(Number.isSafeInteger(saved.total)&&saved.total>=0)points.total=saved.total;
+  if(Number.isInteger(saved.best)&&saved.best>=0)points.best=saved.best;
+  if(saved.hours&&typeof saved.hours==='object'){
+   for(const [k,v] of Object.entries(saved.hours))
+    if(k.length<50&&v&&Number.isSafeInteger(v.value)&&v.value>=0&&
+       Number.isFinite(v.time)&&v.time>Date.now()-30*86400000)
+     points.hours[k]={value:v.value,time:v.time};
+  }
+ }catch(e){points.local=false;}
+}
+function savePoints(){
+ try{
+  const cutoff=Date.now()-30*86400000;
+  for(const [k,v] of Object.entries(points.hours))if(v.time<cutoff)delete points.hours[k];
+  window.localStorage.setItem(SCORE_STORAGE,JSON.stringify({
+   total:points.total,best:points.best,hours:points.hours
+  }));
+  points.local=true;
+ }catch(e){points.local=false;}
+}
+function renderPoints(){
+ const hourly=points.hours[hourBucket(new Date())]?.value||0;
+ byId('scoreHour').textContent=hourly.toLocaleString();
+ byId('scoreTotal').textContent=points.total.toLocaleString();
+ byId('scoreDetailHour').textContent=hourly.toLocaleString();
+ byId('scoreDetailTotal').textContent=points.total.toLocaleString();
+ byId('scoreBest').textContent=points.best+' 颗';
+ byId('scoreNote').textContent=points.local?
+  '本机保存，记录最近30天的逐小时得分和累计总分。在线排行榜尚未启用。':
+  '本机存储不可用：数据只在当前会话有效。在线排行榜尚未启用。';
+ const history=byId('scoreHistory');history.replaceChildren();
+ const latest=Object.entries(points.hours).sort((a,b)=>b[1].time-a[1].time).slice(0,24);
+ if(!latest.length){const row=document.createElement('div');row.textContent='暂无得分记录';history.appendChild(row);}
+ for(const [key,item] of latest){
+  const row=document.createElement('div');row.className='score-item score-history-item';
+  const left=document.createElement('span');left.textContent=key;
+  const right=document.createElement('b');right.textContent=item.value.toLocaleString();
+  row.append(left,right);history.appendChild(row);
+ }
+}
+function addPoints(value,count,x,y){
+ if(!Number.isSafeInteger(value)||value<=0)return;
+ points.total+=value;
+ const key=hourBucket(new Date());
+ if(!points.hours[key])points.hours[key]={value:0,time:Date.now()};
+ points.hours[key].value+=value;points.hours[key].time=Date.now();
+ if(count>=2)points.best=Math.max(points.best,count);
+ points.popup={value,count,x,y,until:now+1.5};
+ savePoints();renderPoints();
+}
+function paintPoints(){
+ const p=points.popup;if(!p||now>p.until||!interact.on)return;
+ const alpha=clamp((p.until-now)/1.5,0,1);
+ ctx.save();ctx.globalAlpha=alpha*.9;ctx.font='12px Consolas,monospace';ctx.textAlign='center';
+ ctx.fillStyle=p.count>=2?'#ffdbab':'#b4ecff';
+ ctx.fillText(p.count>=2?'CHAIN ×'+p.count+'  +'+p.value:'+'+p.value,p.x,p.y-24-(1-alpha)*24);ctx.restore();
+}
+readPoints();
+
 
 // --- Meteor Resonance V2.1: refined stone, deliberate interactions, bounded pools ---
 // Arrays remain capped for long-running wallpapers. All motion uses frame dt.
@@ -97,7 +201,7 @@ const pointer={x:0,y:0,inside:false,moved:-9999};
 // V3.0: hold to draw nearby meteors; release preserves their velocity.
 const sling={down:false,active:false,held:0,start:0,x0:0,y0:0,ignore:0,radius:420};
 function slingDown(e){
- if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel')||sling.down)return;
+ if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel,.score-dock')||sling.down)return;
  pointer.x=e.clientX;pointer.y=e.clientY;pointer.inside=true;pointer.moved=now;
  sling.down=true;sling.active=false;sling.held=0;sling.start=performance.now();
  sling.x0=pointer.x;sling.y0=pointer.y;
@@ -110,17 +214,35 @@ function slingUp(){
  refreshAim();
 }
 function collidingMeteors(){
- for(let i=0;i<interact.meteors.length;i++){
-  const a=interact.meteors[i];if(a.state!=='flying'||a.age<.23)continue;
-  for(let j=i+1;j<interact.meteors.length;j++){
-   const b=interact.meteors[j];if(b.state!=='flying'||b.age<.23)continue;
-   const dx=b.x-a.x,dy=b.y-a.y,dist=(a.r+b.r)*.92;
-   if(dx*dx+dy*dy>dist*dist)continue;
-   if(dx*(b.vx-a.vx)+dy*(b.vy-a.vy)>100)continue;
+ const rocks=interact.meteors.filter(m=>m.state==='flying'&&m.age>.23);
+ const used=new Set();
+ for(let i=0;i<rocks.length;i++){
+  const a=rocks[i];if(a.state!=='flying'||used.has(a.id))continue;
+  for(let j=i+1;j<rocks.length;j++){
+   const b=rocks[j];if(b.state!=='flying'||used.has(b.id))continue;
+   const dx=b.x-a.x,dy=b.y-a.y,r=(a.r+b.r)*.92;
+   if(dx*dx+dy*dy>r*r||dx*(b.vx-a.vx)+dy*(b.vy-a.vy)>100)continue;
+   // One physical impact can propagate to neighbors, once per chain.
+   const chain=[a,b],ids=new Set([a.id,b.id]);
+   for(let k=0;k<chain.length;k++){
+    const focus=chain[k];
+    for(const other of rocks){
+     if(other.state!=='flying'||used.has(other.id)||ids.has(other.id))continue;
+     if(Math.hypot(other.x-focus.x,other.y-focus.y)<Math.max(78,focus.r+other.r+49)){
+      ids.add(other.id);chain.push(other);
+     }
+    }
+   }
+   let x=0,y=0,gold=false;
+   const player=chain.some(m=>m.slingTime>0);
+   for(const m of chain){x+=m.x;y+=m.y;gold ||=m.gold;}
+   x/=chain.length;y/=chain.length;
    if(interact.rings.length>=RING_MAX)interact.rings.shift();
-   interact.rings.push({x:(a.x+b.x)/2,y:(a.y+b.y)/2,
-    base:dist,life:.64,ttl:.64,gold:a.gold||b.gold});
-   shatterMeteor(a);shatterMeteor(b);
+   interact.rings.push({x,y,base:18+5*chain.length,ttl:.7,life:.7,gold});
+   for(const rock of chain){used.add(rock.id);shatterMeteor(rock);}
+   // No passive auto-scoring when the wallaper is unattended.
+   if(player)addPoints(chain.length*100,chain.length,x,y);
+   break;
   }
  }
 }
@@ -146,7 +268,7 @@ function paintSling(t){
 }
 
 let frameDelta=1/60;
-const METEOR_MAX=2,DUST_MAX=64,RING_MAX=3,CAPTURE_MAX=18;
+const METEOR_MAX=5,DUST_MAX=64,RING_MAX=3,CAPTURE_MAX=18;
 function meteorHit(x,y){
  if(!interact.on)return null;
  for(let i=interact.meteors.length-1;i>=0;i--){
@@ -232,11 +354,12 @@ function releaseMeteorFragments(m){
  }
 }
 function shatterMeteor(m){
- if(!interact.on||!m||m.state!=='flying')return;
+ if(!interact.on||!m||m.state!=='flying')return false;
  // Charging: 0–0.09 s, crystallization cracks: 0.09–0.23 s.
  // The actual fragments are released at 0.23 s; no double activation.
  m.state='fracturing';m.breakT=0;m.lock=0;
  interact.hover=null;refreshAim();
+ return true;
 }
 function sampleInteractionQuality(dt){
  interact.qualityWindow+=dt;interact.qualityFrames++;
@@ -263,9 +386,9 @@ function tickInteraction(dt){
  }
  interact.coreResonance=Math.max(0,interact.coreResonance-dt*1.12);
  if(now>=interact.next){
-  if(interact.meteors.length<METEOR_MAX)spawnMeteor();
+  if(interact.meteors.length<(pointer.inside&&now-pointer.moved<32?METEOR_MAX:2))spawnMeteor();
   const idle=!pointer.inside||now-pointer.moved>45;
-  interact.next=now+(idle?25+Math.random()*13:12+Math.random()*10);
+  interact.next=now+(idle?25+Math.random()*13:7+Math.random()*7);
  }
  const smoothing=1-Math.exp(-dt*9.8);
  for(let i=interact.meteors.length-1;i>=0;i--){
@@ -559,6 +682,7 @@ function paintMeteors(t){
  }
  ctx.restore();
  if(interact.hover)paintReticle(interact.hover,t);
+ paintPoints();
 }
 let audioCtx,analyser,srcNode,freqData;
 let toastTimer;
@@ -970,6 +1094,14 @@ byId('audioFile').addEventListener('change',async(e)=>{
 byId('hudBtn').addEventListener('click',()=>document.body.classList.toggle('ui-off'));
 addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.key.toLowerCase()==='m'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))setMeteorMode();if(e.key.toLowerCase()==='p'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))perfToggle();if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
 byId('meteorBtn').addEventListener('click',()=>setMeteorMode());
+byId('scoreButton').addEventListener('click',()=>{
+ const el=byId('scoreDetails');
+ const opened=el.classList.toggle('open');
+ byId('scoreButton').setAttribute('aria-expanded',String(opened));
+ if(opened)renderPoints();
+});
+renderPoints();
+let seenHour=hourBucket(new Date()),lastHourCheck=-1;
 addEventListener('pointerdown',slingDown);
 addEventListener('mousedown',slingDown);
 addEventListener('pointerup',slingUp);
@@ -983,9 +1115,10 @@ addEventListener('mousemove',e=>{
 addEventListener('mouseout',e=>{if(!e.relatedTarget){slingUp();pointer.inside=false;refreshAim();}});
 addEventListener('blur',()=>{slingUp();pointer.inside=false;refreshAim();});
 addEventListener('click',e=>{
- if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel'))return;
+ if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel,.score-dock'))return;
  if(performance.now()<sling.ignore){sling.ignore=0;return;}
- const meteor=meteorHit(e.clientX,e.clientY);if(meteor)shatterMeteor(meteor);
+ const meteor=meteorHit(e.clientX,e.clientY);
+ if(meteor&&shatterMeteor(meteor))addPoints(1,1,meteor.x,meteor.y);
 });
 addEventListener('visibilitychange',()=>{if(document.hidden)slingUp();pause=document.hidden;last=performance.now();perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;});
 
@@ -1032,6 +1165,11 @@ function perfSample(ms,interval,renderMs){
 function loop(ms){requestAnimationFrame(loop);if(pause)return;
  if(!last)last=ms;const rawInterval=ms-last;const dt=Math.min(.05,rawInterval/1000);frameDelta=dt;last=ms;now+=dt;
  tickInteraction(dt);
+ if(Math.floor(now)!==lastHourCheck){
+  lastHourCheck=Math.floor(now);
+  const key=hourBucket(new Date());
+  if(key!==seenHour){seenHour=key;renderPoints();}
+ }
  const startRender=perfMon.open?performance.now():0;
  readAudio(now);let smoothing=1-Math.exp(-dt*9.5);bass=lerp(bass,targetBass,smoothing);mid=lerp(mid,targetMid,smoothing);treble=lerp(treble,targetTreble,smoothing);
  tiltX=lerp(tiltX,mouseX,.025);tiltY=lerp(tiltY,mouseY,.025);

@@ -22,6 +22,7 @@
   @media(max-width:600px){.interface{right:12px;bottom:24px}}
   .ui-off .interface{display:none}
   body.meteor-aim{cursor:crosshair}
+  body.gravity-hold{cursor:grabbing}
   .interface button[aria-pressed="false"]{color:rgba(148,183,202,.48)}
 
 /* Optional V1.2 performance monitor. Press P, or use PERF button. */
@@ -66,7 +67,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v2.3 — Coreward Dissolution & Rare Comets, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.0 — Gravitational Slingshot, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -93,6 +94,57 @@ const interact={
  coreResonance:0,coreSourceX:0,coreSourceY:0,capturePulse:0
 };
 const pointer={x:0,y:0,inside:false,moved:-9999};
+// V3.0: hold to draw nearby meteors; release preserves their velocity.
+const sling={down:false,active:false,held:0,start:0,x0:0,y0:0,ignore:0,radius:420};
+function slingDown(e){
+ if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel')||sling.down)return;
+ pointer.x=e.clientX;pointer.y=e.clientY;pointer.inside=true;pointer.moved=now;
+ sling.down=true;sling.active=false;sling.held=0;sling.start=performance.now();
+ sling.x0=pointer.x;sling.y0=pointer.y;
+}
+function slingUp(){
+ if(!sling.down)return;
+ const used=sling.active||Math.max(sling.held*1000,performance.now()-sling.start)>=180;
+ sling.down=false;sling.active=false;sling.held=0;
+ if(used)sling.ignore=performance.now()+500;
+ refreshAim();
+}
+function collidingMeteors(){
+ for(let i=0;i<interact.meteors.length;i++){
+  const a=interact.meteors[i];if(a.state!=='flying'||a.age<.23)continue;
+  for(let j=i+1;j<interact.meteors.length;j++){
+   const b=interact.meteors[j];if(b.state!=='flying'||b.age<.23)continue;
+   const dx=b.x-a.x,dy=b.y-a.y,dist=(a.r+b.r)*.92;
+   if(dx*dx+dy*dy>dist*dist)continue;
+   if(dx*(b.vx-a.vx)+dy*(b.vy-a.vy)>100)continue;
+   if(interact.rings.length>=RING_MAX)interact.rings.shift();
+   interact.rings.push({x:(a.x+b.x)/2,y:(a.y+b.y)/2,
+    base:dist,life:.64,ttl:.64,gold:a.gold||b.gold});
+   shatterMeteor(a);shatterMeteor(b);
+  }
+ }
+}
+function paintSling(t){
+ if(!interact.on||!sling.active||!pointer.inside)return;
+ ctx.save();ctx.strokeStyle='rgba(137,226,252,.48)';ctx.lineWidth=.85;
+ const x=pointer.x,y=pointer.y,r=20+Math.sin(t*4);
+ for(let j=0;j<3;j++){
+  const a=j*TAU/3+t*.12;
+  ctx.beginPath();ctx.arc(x,y,r,a+.17,a+.9);ctx.stroke();
+ }
+ ctx.fillStyle='rgba(224,248,255,.75)';
+ ctx.beginPath();ctx.arc(x,y,1.35,0,TAU);ctx.fill();
+ for(const m of interact.meteors){
+  if(m.state!=='flying')continue;
+  const d=Math.hypot(x-m.x,y-m.y);
+  if(d>=sling.radius)continue;
+  ctx.strokeStyle='rgba(118,211,247,'+(.04+.17*(1-d/sling.radius))+')';
+  ctx.lineWidth=.65;ctx.beginPath();ctx.moveTo(x,y);
+  ctx.quadraticCurveTo((x+m.x)/2,(y+m.y)/2-9,m.x,m.y);ctx.stroke();
+ }
+ ctx.restore();
+}
+
 let frameDelta=1/60;
 const METEOR_MAX=2,DUST_MAX=64,RING_MAX=3,CAPTURE_MAX=18;
 function meteorHit(x,y){
@@ -107,8 +159,9 @@ function meteorHit(x,y){
  return null;
 }
 function refreshAim(){
- interact.hover=interact.on&&pointer.inside?meteorHit(pointer.x,pointer.y):null;
+ interact.hover=interact.on&&pointer.inside&&!sling.active?meteorHit(pointer.x,pointer.y):null;
  document.body.classList.toggle('meteor-aim',!!interact.hover);
+ document.body.classList.toggle('gravity-hold',interact.on&&sling.active);
 }
 function setMeteorMode(on){
  interact.on=typeof on==='boolean'?on:!interact.on;
@@ -116,6 +169,7 @@ function setMeteorMode(on){
   interact.meteors.length=0;interact.dust.length=0;interact.rings.length=0;
   interact.captured.length=0;interact.comet=null;interact.capturePulse=0;
   interact.hover=null;interact.coreResonance=0;
+  slingUp();sling.ignore=0;
  }else{interact.next=now+3+Math.random()*4;planComet(true);}
  const btn=byId('meteorBtn');
  btn.textContent=interact.on?'☄':'○';
@@ -147,7 +201,7 @@ function spawnMeteor(){
  interact.meteors.push({
   id:++interact.id,x,y,vx,vy,baseVx:vx,baseVy:vy,
   r,kind,gold:kind==='gold',seed,shape,age:0,maxAge:Math.min(48,(distance+95)/speed),
-  spin:(Math.random()-.5)*.19,state:'flying',breakT:0,lock:0
+  spin:(Math.random()-.5)*.19,state:'flying',breakT:0,lock:0,slingTime:0
  });
 }
 function releaseMeteorFragments(m){
@@ -199,6 +253,8 @@ function sampleInteractionQuality(dt){
 }
 function tickInteraction(dt){
  if(!interact.on)return;
+ if(sling.down){sling.held+=dt;
+  if(sling.held>=.18||Math.hypot(pointer.x-sling.x0,pointer.y-sling.y0)>14)sling.active=true;}
  sampleInteractionQuality(dt);
  tickCelestial(dt);
  if(now>=interact.nextComet){
@@ -223,24 +279,42 @@ function tickInteraction(dt){
   }
   // A 0.2 s celestial acquisition animation. Clicks work immediately.
   m.lock+=((interact.hover===m?1:0)-m.lock)*smoothing;
-  let targetVx=m.baseVx,targetVy=m.baseVy;
-  if(pointer.inside){
-   const dx=pointer.x-m.x,dy=pointer.y-m.y;
-   const d=Math.hypot(dx,dy),radius=190;
-   if(d>1&&d<radius){
-    // Very weak gravity, max ~8 px/s change; never snaps to pointer.
-    const influence=Math.pow(1-d/radius,2);
-    targetVx+=dx/d*Math.min(8,influence*9);
-    targetVy+=dy/d*Math.min(8,influence*9);
+  // Active hold: accelerate toward the cursor. Let go: inertial slingshot.
+  const pulling=sling.active&&pointer.inside;
+  let drawn=false;
+  if(pulling){
+   const dx=pointer.x-m.x,dy=pointer.y-m.y,d=Math.hypot(dx,dy);
+   if(d>6&&d<sling.radius){
+    const force=620*Math.pow(1-d/sling.radius,1.13);
+    m.vx+=dx/d*force*dt;m.vy+=dy/d*force*dt;
+    const drag=Math.exp(-dt*.29);m.vx*=drag;m.vy*=drag;
+    const speed=Math.hypot(m.vx,m.vy);
+    if(speed>300){m.vx*=300/speed;m.vy*=300/speed;}
+    m.slingTime=3.5;m.maxAge=Math.min(88,Math.max(m.maxAge,m.age+8));
+    drawn=true;
    }
   }
-  const drift=1-Math.exp(-dt*1.2);
-  m.vx+=(targetVx-m.vx)*drift;m.vy+=(targetVy-m.vy)*drift;
-  const hoveredSlow=1-.27*m.lock;
-  m.x+=m.vx*dt*hoveredSlow;m.y+=m.vy*dt*hoveredSlow;m.age+=dt;
+  if(!drawn){
+   if(m.slingTime>0){
+    m.slingTime=Math.max(0,m.slingTime-dt);
+    const drag=Math.exp(-dt*.11);m.vx*=drag;m.vy*=drag;
+   }else{
+    let tx=m.baseVx,ty=m.baseVy;
+    if(pointer.inside&&!sling.active){
+     const dx=pointer.x-m.x,dy=pointer.y-m.y,d=Math.hypot(dx,dy);
+     if(d>1&&d<190){const f=Math.pow(1-d/190,2);
+      tx+=dx/d*Math.min(8,f*9);ty+=dy/d*Math.min(8,f*9);}
+    }
+    const smooth=1-Math.exp(-dt*1.2);
+    m.vx+=(tx-m.vx)*smooth;m.vy+=(ty-m.vy)*smooth;
+   }
+  }
+  const slow=(pulling||m.slingTime>0)?1:1-.27*m.lock;
+  m.x+=m.vx*dt*slow;m.y+=m.vy*dt*slow;m.age+=dt;
   if(m.age>m.maxAge||m.x< -130||m.x>W+130||m.y< -130||m.y>H+130)
    interact.meteors.splice(i,1);
  }
+ collidingMeteors();
  // Quadratic pull: fade en route. Distinct selected fragments still reach
  // the core, triggering the preexisting absorption pulse.
  for(let i=interact.dust.length-1;i>=0;i--){
@@ -450,6 +524,7 @@ function paintReticle(m,t){
 function paintMeteors(t){
  if(!interact.on)return;
  ctx.save();
+ paintSling(t);
  for(const m of interact.meteors)paintMeteor(m,t);
  ctx.globalCompositeOperation='lighter';
  for(const p of interact.dust){
@@ -895,18 +970,24 @@ byId('audioFile').addEventListener('change',async(e)=>{
 byId('hudBtn').addEventListener('click',()=>document.body.classList.toggle('ui-off'));
 addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')document.body.classList.toggle('ui-off');if(e.key.toLowerCase()==='m'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))setMeteorMode();if(e.key.toLowerCase()==='p'&&!['INPUT','TEXTAREA'].includes(e.target.tagName))perfToggle();if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();demo=!demo;}});
 byId('meteorBtn').addEventListener('click',()=>setMeteorMode());
+addEventListener('pointerdown',slingDown);
+addEventListener('mousedown',slingDown);
+addEventListener('pointerup',slingUp);
+addEventListener('mouseup',slingUp);
+addEventListener('pointercancel',slingUp);
 addEventListener('mousemove',e=>{
  mouseX=(e.clientX/W-.5)*2;mouseY=(e.clientY/H-.5)*2;
  pointer.x=e.clientX;pointer.y=e.clientY;pointer.inside=true;pointer.moved=now;
  refreshAim();
 },{passive:true});
-addEventListener('mouseout',e=>{if(!e.relatedTarget){pointer.inside=false;refreshAim();}});
-addEventListener('blur',()=>{pointer.inside=false;refreshAim();});
+addEventListener('mouseout',e=>{if(!e.relatedTarget){slingUp();pointer.inside=false;refreshAim();}});
+addEventListener('blur',()=>{slingUp();pointer.inside=false;refreshAim();});
 addEventListener('click',e=>{
  if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel'))return;
+ if(performance.now()<sling.ignore){sling.ignore=0;return;}
  const meteor=meteorHit(e.clientX,e.clientY);if(meteor)shatterMeteor(meteor);
 });
-addEventListener('visibilitychange',()=>{pause=document.hidden;last=performance.now();perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;});
+addEventListener('visibilitychange',()=>{if(document.hidden)slingUp();pause=document.hidden;last=performance.now();perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;});
 
 /* Optional browser-only performance telemetry; GPU/RAM/CPU usage cannot be directly measured here. */
 const perfMon={open:false,t0:0,frames:0,drawMs:0,stutter:0,history:[]};

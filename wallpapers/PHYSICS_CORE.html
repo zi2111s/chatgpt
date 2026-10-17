@@ -64,7 +64,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v1.6 — refined orbital clock., offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v1.7 — refined orbital numerals, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -275,6 +275,46 @@ function drawOrnateHand(o,t,pose,front,amp){
  ctx.fillStyle='#fffdf2';ctx.beginPath();ctx.arc(0,0,.9,0,TAU);ctx.fill();
  ctx.restore();
 }
+// Minimal celestial dial typography: fine serif numerals stay upright while
+// their anchor points ride the same rotating 3D ring as ticks and time hands.
+const orbitLabelBoxes=[[],[]];
+function drawOrbitNumeral(o,pose,fraction,legend,front,amp,current){
+ const p=orbitPoint(o,pose,-Math.PI/2+TAU*fraction,current?1.138:1.095,amp);
+ if(front?p[2]<0:p[2]>=0)return;
+ const hour=o.unit==='hour';
+ const size=current?(hour?14:13):(hour?12.5:o.unit==='minute'?11.5:10.5);
+ if(p[0]<20||p[0]>W-20||p[1]<20||p[1]>H-20)return;
+ ctx.save();
+ ctx.font=(current?'600 ':'400 ')+size+'px "Palatino Linotype","Book Antiqua",Georgia,serif';
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ const bw=ctx.measureText(legend).width+8,bh=size+6;
+ const r=[p[0]-bw/2,p[1]-bh/2,p[0]+bw/2,p[1]+bh/2];
+ const boxes=orbitLabelBoxes[front?1:0];
+ // Avoid dense collisions when a 3D ring is nearly edge-on.
+ if(boxes.some(q=>r[0]<q[2]+3&&r[2]>q[0]-3&&r[1]<q[3]+3&&r[3]>q[1]-3)){ctx.restore();return;}
+ boxes.push(r);
+ ctx.globalCompositeOperation='source-over';
+ ctx.globalAlpha=(front?1:.32)*(current?.91:hour?.64:o.unit==='minute'?.53:.45);
+ ctx.lineJoin='round';ctx.lineWidth=current?2.8:2.3;
+ ctx.strokeStyle='rgba(1,11,25,.92)';
+ ctx.strokeText(legend,p[0],p[1]);
+ ctx.shadowColor=hour?'#d9ad78':o.unit==='minute'?'#76d7ef':'#b8d8e5';
+ ctx.shadowBlur=current?5:1;
+ ctx.fillStyle=hour?'#f1d0a0':o.unit==='minute'?'#acddef':'#ccdfeb';
+ ctx.fillText(legend,p[0],p[1]);
+ ctx.restore();
+}
+function drawOrbitNumerals(o,pose,front,amp){
+ const f=clockFraction[o.unit];
+ const current=o.unit==='hour'?(Math.floor(f*12)%12||12):Math.floor(f*60)%60;
+ drawOrbitNumeral(o,pose,f,o.unit==='hour'?String(current):String(current).padStart(2,'0'),front,amp,true);
+ const markings=o.unit==='hour'?12:6;
+ for(let i=0;i<markings;i++){
+  const digit=o.unit==='hour'?String(i||12):String(i*10).padStart(2,'0');
+  drawOrbitNumeral(o,pose,i/markings,digit,front,amp,false);
+ }
+}
+
 function drawOrbit(o,t,front){
  const pose=getOrbitPose(o,t),amp=1+audioStrength()*.035;
  const pts=[];
@@ -306,6 +346,7 @@ function drawOrbit(o,t,front){
   ctx.beginPath();ctx.arc(p[0],p[1],selected?2.5:major?1.6:.85,0,TAU);ctx.fill();
  }
  ctx.restore();
+ drawOrbitNumerals(o,pose,front,amp);
  drawOrnateHand(o,t,pose,front,amp);
 }
 function audioStrength(){return Math.min(1,bass*.75+mid*.4+treble*.25)}
@@ -415,6 +456,7 @@ function drawCoreOrnament(t){
 // Decorative racing packets removed to make clock ticks and ornate pointers legible.
 
 function drawOverlay(t){
+ orbitLabelBoxes[0].length=0;orbitLabelBoxes[1].length=0;
  ctx.clearRect(0,0,W,H);
  if(!gl||!program)drawNebulaFallback();
  drawStars(t);drawBeams(t);drawPlasmaDisk(t);

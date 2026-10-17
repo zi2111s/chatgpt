@@ -66,7 +66,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v2.0 — Meteor Resonance, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v2.1 — Meteor Resonance refined, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -85,15 +85,24 @@ let now=0,last=0,pause=false,frame=0,hasWallpaperAudio=false,lastWallpaperAudio=
 let bass=0,mid=0,treble=0,targetBass=0,targetMid=0,targetTreble=0,demo=false,audioSource=false;
 let mouseX=0,mouseY=0,tiltX=0,tiltY=0;
 
-// --- Meteor Resonance V2.0: capped interaction pools, no interval timers ---
-const interact={on:true,meteors:[],dust:[],rings:[],hover:null,next:now+5,id:0};
+// --- Meteor Resonance V2.1: refined stone, deliberate interactions, bounded pools ---
+// Arrays remain capped for long-running wallpapers. All motion uses frame dt.
+const interact={
+ on:true,meteors:[],dust:[],rings:[],hover:null,next:now+5,id:0,
+ quality:1,qualityWindow:0,qualityFrames:0,qualityLow:0,qualityHigh:0,
+ coreResonance:0,coreSourceX:0,coreSourceY:0
+};
 const pointer={x:0,y:0,inside:false,moved:-9999};
 let frameDelta=1/60;
+const METEOR_MAX=2,DUST_MAX=64,RING_MAX=3;
 function meteorHit(x,y){
  if(!interact.on)return null;
  for(let i=interact.meteors.length-1;i>=0;i--){
-  const m=interact.meteors[i],dx=x-m.x,dy=y-m.y;
-  if(dx*dx+dy*dy<Math.pow(Math.max(19,m.r*1.6),2))return m;
+  const m=interact.meteors[i];
+  if(m.state!=='flying')continue;
+  const dx=x-m.x,dy=y-m.y;
+  // Generous interaction area without adding a visible UI bubble.
+  if(dx*dx+dy*dy<Math.pow(Math.max(24,m.r*1.8),2))return m;
  }
  return null;
 }
@@ -103,8 +112,10 @@ function refreshAim(){
 }
 function setMeteorMode(on){
  interact.on=typeof on==='boolean'?on:!interact.on;
- if(!interact.on){interact.meteors.length=0;interact.dust.length=0;interact.rings.length=0;interact.hover=null;}
- else interact.next=now+3+Math.random()*4;
+ if(!interact.on){
+  interact.meteors.length=0;interact.dust.length=0;interact.rings.length=0;
+  interact.hover=null;interact.coreResonance=0;
+ }else interact.next=now+3+Math.random()*4;
  const btn=byId('meteorBtn');
  btn.textContent=interact.on?'☄':'○';
  btn.setAttribute('aria-pressed',String(interact.on));
@@ -113,56 +124,115 @@ function setMeteorMode(on){
  refreshAim();
 }
 function spawnMeteor(){
- if(interact.meteors.length>=2)return;
+ if(interact.meteors.length>=METEOR_MAX)return;
  let x,y,ex,ey;
  const horizontal=Math.random()<.5,reverse=Math.random()<.5;
- const lane=.10+Math.random()*.16,far=Math.random()<.5;
+ const lane=.10+Math.random()*.17,far=Math.random()<.5;
  if(horizontal){
-  y=H*(far?1-lane:lane);
-  x=reverse?W+35:-35;ex=reverse?-50:W+50;
-  ey=y+(Math.random()-.5)*H*.10;
+  y=H*(far?1-lane:lane);x=reverse?W+35:-35;
+  ex=reverse?-50:W+50;ey=y+(Math.random()-.5)*H*.11;
  }else{
-  x=W*(far?1-lane:lane);
-  y=reverse?H+35:-35;ey=reverse?-50:H+50;
-  ex=x+(Math.random()-.5)*W*.10;
+  x=W*(far?1-lane:lane);y=reverse?H+35:-35;
+  ey=reverse?-50:H+50;ex=x+(Math.random()-.5)*W*.11;
  }
- const dist=Math.hypot(ex-x,ey-y),speed=40+Math.random()*27;
- interact.meteors.push({id:++interact.id,x,y,vx:(ex-x)/dist*speed,
-  vy:(ey-y)/dist*speed,r:11+Math.random()*10,age:0,
-  maxAge:(dist+95)/speed,seed:Math.random()*TAU,
-  gold:Math.random()<.24,spin:(Math.random()-.5)*.16});
+ const distance=Math.hypot(ex-x,ey-y),speed=42+Math.random()*33;
+ const typeRoll=Math.random(),kind=typeRoll<.12?'gold':typeRoll<.48?'ice':'dark';
+ const r=11+Math.random()*10,seed=Math.random()*TAU;
+ const sides=11,shape=[];
+ for(let i=0;i<sides;i++){
+  shape.push(.82+.15*Math.sin(i*4.27+seed*2)+.055*Math.cos(i*7.9+seed));
+ }
+ const vx=(ex-x)/distance*speed,vy=(ey-y)/distance*speed;
+ interact.meteors.push({
+  id:++interact.id,x,y,vx,vy,baseVx:vx,baseVy:vy,
+  r,kind,gold:kind==='gold',seed,shape,age:0,maxAge:Math.min(48,(distance+95)/speed),
+  spin:(Math.random()-.5)*.19,state:'flying',breakT:0,lock:0
+ });
+}
+function releaseMeteorFragments(m){
+ const cap=interact.quality===1?24:14;
+ const count=Math.min(DUST_MAX-interact.dust.length,12+Math.floor(Math.random()*13),cap);
+ for(let k=0;k<count;k++){
+  const a=k/Math.max(1,count)*TAU+(Math.random()-.5)*.34;
+  const speed=45+Math.random()*86;
+  const ttl=.55+Math.random()*.65;
+  interact.dust.push({
+   x:m.x,y:m.y,vx:Math.cos(a)*speed+m.vx*.13,
+   vy:Math.sin(a)*speed+m.vy*.13,life:ttl,ttl,
+   r:.75+Math.random()*1.8,
+   color:m.kind==='gold'?'gold':m.kind==='ice'?'ice':'dark'
+  });
+ }
+ if(interact.rings.length>=RING_MAX)interact.rings.shift();
+ interact.rings.push({x:m.x,y:m.y,base:m.r,life:.58,ttl:.58,gold:m.gold});
+ if(m.gold){
+  interact.coreSourceX=m.x;interact.coreSourceY=m.y;
+  interact.coreResonance=Math.max(interact.coreResonance,.75);
+ }
 }
 function shatterMeteor(m){
- const i=interact.meteors.indexOf(m);if(i<0)return;
- interact.meteors.splice(i,1);
- const count=Math.min(20,64-interact.dust.length);
- for(let k=0;k<count;k++){
-  const a=k/Math.max(1,count)*TAU+(Math.random()-.5)*.35;
-  const sp=40+Math.random()*70,ttl=.48+Math.random()*.48;
-  interact.dust.push({x:m.x,y:m.y,vx:Math.cos(a)*sp+m.vx*.2,
-   vy:Math.sin(a)*sp+m.vy*.2,life:ttl,ttl,r:.75+Math.random()*1.8,
-   gold:m.gold||k%5===0});
- }
- if(interact.rings.length>=3)interact.rings.shift();
- interact.rings.push({x:m.x,y:m.y,base:m.r,life:.48,ttl:.48,gold:m.gold});
+ if(!interact.on||!m||m.state!=='flying')return;
+ // Charging: 0–0.09 s, crystallization cracks: 0.09–0.23 s.
+ // The actual fragments are released at 0.23 s; no double activation.
+ m.state='fracturing';m.breakT=0;m.lock=0;
  interact.hover=null;refreshAim();
+}
+function sampleInteractionQuality(dt){
+ interact.qualityWindow+=dt;interact.qualityFrames++;
+ if(interact.qualityWindow<3)return;
+ const measured=interact.qualityFrames/interact.qualityWindow;
+ if(measured<42){
+  interact.qualityLow++;interact.qualityHigh=0;
+ }else if(measured>53){
+  interact.qualityHigh++;interact.qualityLow=0;
+ }else{interact.qualityLow=0;interact.qualityHigh=0;}
+ if(interact.qualityLow>=2)interact.quality=0; // sustained low FPS, not a single spike
+ if(interact.qualityHigh>=3)interact.quality=1;
+ interact.qualityWindow=0;interact.qualityFrames=0;
 }
 function tickInteraction(dt){
  if(!interact.on)return;
+ sampleInteractionQuality(dt);
+ interact.coreResonance=Math.max(0,interact.coreResonance-dt*1.12);
  if(now>=interact.next){
-  if(interact.meteors.length<2)spawnMeteor();
+  if(interact.meteors.length<METEOR_MAX)spawnMeteor();
   const idle=!pointer.inside||now-pointer.moved>45;
-  interact.next=now+(idle?21+Math.random()*12:12+Math.random()*9);
+  interact.next=now+(idle?25+Math.random()*13:12+Math.random()*10);
  }
+ const smoothing=1-Math.exp(-dt*9.8);
  for(let i=interact.meteors.length-1;i>=0;i--){
   const m=interact.meteors[i];
-  m.x+=m.vx*dt;m.y+=m.vy*dt;m.age+=dt;
+  if(m.state==='fracturing'){
+   m.breakT+=dt;
+   if(m.breakT>=.23){
+    releaseMeteorFragments(m);interact.meteors.splice(i,1);
+   }
+   continue;
+  }
+  // A 0.2 s celestial acquisition animation. Clicks work immediately.
+  m.lock+=((interact.hover===m?1:0)-m.lock)*smoothing;
+  let targetVx=m.baseVx,targetVy=m.baseVy;
+  if(pointer.inside){
+   const dx=pointer.x-m.x,dy=pointer.y-m.y;
+   const d=Math.hypot(dx,dy),radius=190;
+   if(d>1&&d<radius){
+    // Very weak gravity, max ~8 px/s change; never snaps to pointer.
+    const influence=Math.pow(1-d/radius,2);
+    targetVx+=dx/d*Math.min(8,influence*9);
+    targetVy+=dy/d*Math.min(8,influence*9);
+   }
+  }
+  const drift=1-Math.exp(-dt*1.2);
+  m.vx+=(targetVx-m.vx)*drift;m.vy+=(targetVy-m.vy)*drift;
+  const hoveredSlow=1-.27*m.lock;
+  m.x+=m.vx*dt*hoveredSlow;m.y+=m.vy*dt*hoveredSlow;m.age+=dt;
   if(m.age>m.maxAge||m.x< -130||m.x>W+130||m.y< -130||m.y>H+130)
    interact.meteors.splice(i,1);
  }
+ const damping=Math.exp(-dt*2.8);
  for(let i=interact.dust.length-1;i>=0;i--){
-  const p=interact.dust[i],drag=Math.exp(-dt*2.9);
-  p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=drag;p.vy*=drag;p.life-=dt;
+  const p=interact.dust[i];
+  p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=damping;p.vy*=damping;p.life-=dt;
   if(p.life<=0)interact.dust.splice(i,1);
  }
  for(let i=interact.rings.length-1;i>=0;i--){
@@ -171,46 +241,90 @@ function tickInteraction(dt){
  }
  refreshAim();
 }
-function paintMeteor(m,t){
- ctx.save();ctx.translate(m.x,m.y);ctx.rotate(Math.atan2(m.vy,m.vx));
- ctx.globalAlpha=clamp(m.age/.65,0,1);
- const tail=ctx.createLinearGradient(-m.r*3,0,0,0);
- tail.addColorStop(0,'rgba(69,172,230,0)');
- tail.addColorStop(1,m.gold?'rgba(248,172,93,.24)':'rgba(97,201,240,.24)');
- ctx.fillStyle=tail;ctx.beginPath();ctx.moveTo(-m.r*3,0);
- ctx.lineTo(-m.r*.2,-m.r*.24);ctx.lineTo(-m.r*.2,m.r*.24);ctx.closePath();ctx.fill();
- ctx.rotate(m.seed+t*m.spin);
- const rock=ctx.createRadialGradient(-m.r*.3,-m.r*.4,0,0,0,m.r);
- rock.addColorStop(0,m.gold?'#726151':'#4b6779');
- rock.addColorStop(.5,m.gold?'#30323c':'#22364a');
- rock.addColorStop(1,'#080f20');
- ctx.fillStyle=rock;ctx.strokeStyle=m.gold?'rgba(232,182,112,.60)':'rgba(131,203,229,.56)';
- ctx.lineWidth=.8;ctx.shadowColor=m.gold?'#c28c5f':'#46b8de';ctx.shadowBlur=3;
+const METEOR_PALETTES={
+ dark:{light:'#536d82',mid:'#2b3c4e',shade:'#101b2a',edge:'#6899ac',crack:'#78cced',facets:['#3b5061','#1a2b3b','#293c4e','#122438']},
+ ice:{light:'#7aafc9',mid:'#305873',shade:'#0b253d',edge:'#98e2f7',crack:'#b4f3ff',facets:['#497a99','#153955','#2b607d','#16364e']},
+ gold:{light:'#ae8a61',mid:'#594335',shade:'#201a21',edge:'#ecc18b',crack:'#ffe2ae',facets:['#83644a','#372f31','#69503c','#25262e']}
+};
+function traceRockPath(m){
  ctx.beginPath();
- for(let i=0;i<11;i++){
-  const a=i*TAU/11,r=m.r*(.83+.1*Math.sin(i*5+m.seed)+.05*Math.sin(i*8+m.seed));
-  if(!i)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+ const n=m.shape.length;
+ for(let i=0;i<n;i++){
+  const theta=i*TAU/n,r=m.r*m.shape[i],x=Math.cos(theta)*r,y=Math.sin(theta)*r;
+  if(!i)ctx.moveTo(x,y);else ctx.lineTo(x,y);
  }
- ctx.closePath();ctx.fill();ctx.stroke();
- ctx.shadowBlur=0;ctx.strokeStyle=m.gold?'rgba(251,183,102,.58)':'rgba(126,214,244,.50)';
- ctx.lineWidth=.75;
- ctx.beginPath();ctx.moveTo(-m.r*.52,-m.r*.33);ctx.lineTo(-m.r*.14,-m.r*.05);
- ctx.lineTo(m.r*.18,-m.r*.25);ctx.lineTo(m.r*.52,m.r*.23);ctx.stroke();
- ctx.restore();
+ ctx.closePath();
+}
+function paintMeteor(m,t){
+ const colors=METEOR_PALETTES[m.kind];
+ const fracture=m.state==='fracturing';
+ const crackStage=fracture?clamp(m.breakT/.23,0,1):0;
+ const timeAngle=m.seed+t*m.spin;
+ ctx.save();ctx.translate(m.x,m.y);
+ ctx.globalAlpha=clamp(m.age/.6,0,1);
+ const theta=Math.atan2(m.vy,m.vx);
+ ctx.rotate(theta);
+ // A narrow tail, aligned with velocity rather than a large sweeping beam.
+ const tail=ctx.createLinearGradient(-m.r*3.2,0,0,0);
+ tail.addColorStop(0,'rgba(76,155,205,0)');
+ tail.addColorStop(1,m.gold?'rgba(247,187,105,.23)':'rgba(111,201,240,.19)');
+ ctx.fillStyle=tail;ctx.beginPath();
+ ctx.moveTo(-m.r*3.2,0);ctx.lineTo(-m.r*.3,-m.r*.24);
+ ctx.lineTo(-m.r*.3,m.r*.24);ctx.closePath();ctx.fill();
+ ctx.rotate(timeAngle-theta);
+ // Crystalline radial gradient + clipped triangular facets, still lightweight 2D.
+ const fill=ctx.createRadialGradient(-m.r*.36,-m.r*.44,0,0,0,m.r*1.06);
+ fill.addColorStop(0,colors.light);fill.addColorStop(.54,colors.mid);
+ fill.addColorStop(1,colors.shade);
+ ctx.fillStyle=fill;ctx.strokeStyle=colors.edge;ctx.lineWidth=.85;
+ ctx.shadowColor=colors.edge;ctx.shadowBlur=interact.quality?3:0;
+ traceRockPath(m);ctx.fill();ctx.stroke();
+ ctx.shadowBlur=0;ctx.save();traceRockPath(m);ctx.clip();
+ const n=m.shape.length;
+ for(let i=0;i<n;i++){
+  const a=i*TAU/n,b=(i+1)*TAU/n;
+  const ra=m.r*m.shape[i],rb=m.r*m.shape[(i+1)%n];
+  ctx.fillStyle=colors.facets[i%colors.facets.length];
+  ctx.globalAlpha=.23+(i%4)*.055;
+  ctx.beginPath();ctx.moveTo(-m.r*.12,-m.r*.14);
+  ctx.lineTo(Math.cos(a)*ra,Math.sin(a)*ra);
+  ctx.lineTo(Math.cos(b)*rb,Math.sin(b)*rb);ctx.closePath();ctx.fill();
+ }
+ ctx.globalAlpha=.63+crackStage*.3;
+ ctx.strokeStyle=colors.crack;ctx.lineWidth=fracture?1.15:.8;
+ const offset=m.seed*.17;
+ ctx.beginPath();ctx.moveTo(-m.r*.65,-m.r*.26);
+ ctx.lineTo(-m.r*.19,-m.r*.07+offset);ctx.lineTo(m.r*.16,-m.r*.32);
+ ctx.lineTo(m.r*.57,m.r*.20);ctx.stroke();
+ if(fracture){
+  // Fracture creeps across the surface before it breaks apart.
+  ctx.globalAlpha=crackStage;
+  ctx.beginPath();ctx.moveTo(-m.r*.19,-m.r*.07+offset);
+  ctx.lineTo(-m.r*.05,m.r*.35);ctx.lineTo(m.r*.25,m.r*.64);
+  ctx.moveTo(m.r*.16,-m.r*.32);ctx.lineTo(m.r*.55,-m.r*.51);
+  ctx.stroke();
+  ctx.globalAlpha=clamp((.23-m.breakT)/.14,0,1)*.45;
+  ctx.fillStyle=colors.crack;ctx.beginPath();ctx.arc(0,0,m.r*.65,0,TAU);ctx.fill();
+ }
+ ctx.restore();ctx.restore();
 }
 function paintReticle(m,t){
- const r=m.r+10+Math.sin(t*3)*.8;
+ const acquire=clamp(m.lock,0,1);
+ if(acquire<.02||m.state!=='flying')return;
+ const r=m.r+11+(1-acquire)*13;
  ctx.save();ctx.translate(m.x,m.y);
- ctx.strokeStyle=m.gold?'rgba(255,219,171,.90)':'rgba(164,230,251,.91)';
- ctx.shadowColor=m.gold?'#ffb56c':'#66d9ff';ctx.shadowBlur=6;ctx.lineWidth=1.1;
+ ctx.globalAlpha=acquire*.91;
+ ctx.strokeStyle=m.gold?'#f2c898':m.kind==='ice'?'#bcf2ff':'#8bdef5';
+ ctx.shadowColor=m.gold?'#f4ac66':'#53c9f2';
+ ctx.shadowBlur=interact.quality?5:1;ctx.lineWidth=1.05;
  for(let i=0;i<4;i++){
-  const a=i*TAU/4+t*.08;
-  ctx.beginPath();ctx.arc(0,0,r,a+.18,a+.65);ctx.stroke();
-  const x=Math.cos(a)*(r+5),y=Math.sin(a)*(r+5);
-  ctx.beginPath();ctx.moveTo(x+Math.cos(a)*3,y+Math.sin(a)*3);
-  ctx.lineTo(x-Math.sin(a)*2,y+Math.cos(a)*2);
-  ctx.lineTo(x-Math.cos(a)*3,y-Math.sin(a)*3);
-  ctx.lineTo(x+Math.sin(a)*2,y-Math.cos(a)*2);ctx.closePath();ctx.stroke();
+  const a=i*TAU/4+t*.07;
+  ctx.beginPath();ctx.arc(0,0,r,a+.20,a+.64);ctx.stroke();
+  const px=Math.cos(a)*(r+5),py=Math.sin(a)*(r+5);
+  ctx.beginPath();ctx.moveTo(px+Math.cos(a)*2.8,py+Math.sin(a)*2.8);
+  ctx.lineTo(px-Math.sin(a)*2.1,py+Math.cos(a)*2.1);
+  ctx.lineTo(px-Math.cos(a)*2.8,py-Math.sin(a)*2.8);
+  ctx.lineTo(px+Math.sin(a)*2.1,py-Math.cos(a)*2.1);ctx.closePath();ctx.stroke();
  }
  ctx.restore();
 }
@@ -220,20 +334,36 @@ function paintMeteors(t){
  for(const m of interact.meteors)paintMeteor(m,t);
  ctx.globalCompositeOperation='lighter';
  for(const p of interact.dust){
-  const fade=Math.pow(clamp(p.life/p.ttl,0,1),1.3);
-  ctx.fillStyle=p.gold?'rgba(255,196,125,'+(fade*.88)+')':'rgba(121,220,255,'+(fade*.84)+')';
+  const fade=Math.pow(clamp(p.life/p.ttl,0,1),1.5);
+  ctx.fillStyle=p.color==='gold'?'rgba(255,198,128,'+(fade*.84)+')':
+   p.color==='ice'?'rgba(171,237,255,'+(fade*.77)+')':
+   'rgba(108,197,239,'+(fade*.77)+')';
   ctx.fillRect(p.x,p.y,p.r,p.r);
  }
  for(const r of interact.rings){
-  const progress=1-r.life/r.ttl;
-  ctx.strokeStyle=r.gold?'rgba(255,196,110,'+(.33*(1-progress))+')':'rgba(120,224,249,'+(.30*(1-progress))+')';
-  ctx.lineWidth=1.5*(1-progress)+.35;ctx.beginPath();
-  ctx.arc(r.x,r.y,r.base+progress*24,0,TAU);ctx.stroke();
+  const phase=1-r.life/r.ttl;
+  ctx.strokeStyle=r.gold?'rgba(255,203,130,'+(1-phase)*.34+')':'rgba(118,218,248,'+(1-phase)*.30+')';
+  ctx.lineWidth=1.4*(1-phase)+.3;ctx.beginPath();
+  ctx.arc(r.x,r.y,r.base+phase*25,0,TAU);ctx.stroke();
+ }
+ // Only rare gold stones can briefly send a fine luminous thread to the core.
+ if(interact.coreResonance>.001){
+  const strength=interact.coreResonance;
+  const gradient=ctx.createLinearGradient(interact.coreSourceX,interact.coreSourceY,CX,CY);
+  gradient.addColorStop(0,'rgba(255,203,139,0)');
+  gradient.addColorStop(.38,'rgba(255,203,139,'+(strength*.18)+')');
+  gradient.addColorStop(1,'rgba(255,236,190,0)');
+  ctx.strokeStyle=gradient;ctx.lineWidth=.7+strength*.8;
+  ctx.beginPath();ctx.moveTo(interact.coreSourceX,interact.coreSourceY);
+  ctx.quadraticCurveTo((interact.coreSourceX+CX)/2,(interact.coreSourceY+CY)/2-14,CX,CY);ctx.stroke();
+  const pulse=ctx.createRadialGradient(CX,CY,0,CX,CY,scale*.42);
+  pulse.addColorStop(0,'rgba(255,222,152,'+(strength*.23)+')');
+  pulse.addColorStop(1,'rgba(255,198,114,0)');
+  ctx.fillStyle=pulse;ctx.beginPath();ctx.arc(CX,CY,scale*.42,0,TAU);ctx.fill();
  }
  ctx.restore();
  if(interact.hover)paintReticle(interact.hover,t);
 }
-
 let audioCtx,analyser,srcNode,freqData;
 let toastTimer;
 function toast(str){const el=byId('toast');el.textContent=str;el.style.opacity='1';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.opacity='0',2500)}

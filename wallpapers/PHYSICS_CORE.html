@@ -66,7 +66,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v2.2 — Captured Stardust & Rare Comets, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v2.3 — Coreward Dissolution & Rare Comets, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -158,11 +158,14 @@ function releaseMeteorFragments(m){
  for(let k=0;k<count;k++){
   const a=k/Math.max(1,count)*TAU+(Math.random()-.5)*.34;
   const speed=45+Math.random()*86;
-  const ttl=.55+Math.random()*.65;
   if(k%5===0&&captured<quota&&captureFragment(m,a)){captured++;continue;}
+  // Small initial burst, followed by coreward curved motion and dissolution.
+  const vx=Math.cos(a)*speed+m.vx*.13,vy=Math.sin(a)*speed+m.vy*.13;
+  const ttl=1.35+Math.random()*.45;
   interact.dust.push({
-   x:m.x,y:m.y,vx:Math.cos(a)*speed+m.vx*.13,
-   vy:Math.sin(a)*speed+m.vy*.13,life:ttl,ttl,
+   x:m.x,y:m.y,startX:m.x,startY:m.y,
+   controlX:m.x+vx*.16,controlY:m.y+vy*.16,
+   endX:CX,endY:CY,life:ttl,ttl,
    r:.75+Math.random()*1.8,
    color:m.kind==='gold'?'gold':m.kind==='ice'?'ice':'dark'
   });
@@ -238,11 +241,15 @@ function tickInteraction(dt){
   if(m.age>m.maxAge||m.x< -130||m.x>W+130||m.y< -130||m.y>H+130)
    interact.meteors.splice(i,1);
  }
- const damping=Math.exp(-dt*2.8);
+ // Quadratic pull: fade en route. Distinct selected fragments still reach
+ // the core, triggering the preexisting absorption pulse.
  for(let i=interact.dust.length-1;i>=0;i--){
   const p=interact.dust[i];
-  p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=damping;p.vy*=damping;p.life-=dt;
-  if(p.life<=0)interact.dust.splice(i,1);
+  p.life=Math.max(0,p.life-dt);
+  if(p.life<=0){interact.dust.splice(i,1);continue;}
+  const f=1-p.life/p.ttl,u=f*.96,inv=1-u;
+  p.x=inv*inv*p.startX+2*inv*u*p.controlX+u*u*p.endX;
+  p.y=inv*inv*p.startY+2*inv*u*p.controlY+u*u*p.endY;
  }
  for(let i=interact.rings.length-1;i>=0;i--){
   const r=interact.rings[i];r.life-=dt;
@@ -446,11 +453,12 @@ function paintMeteors(t){
  for(const m of interact.meteors)paintMeteor(m,t);
  ctx.globalCompositeOperation='lighter';
  for(const p of interact.dust){
-  const fade=Math.pow(clamp(p.life/p.ttl,0,1),1.5);
+  const fade=Math.pow(clamp(p.life/p.ttl,0,1),1.35);
   ctx.fillStyle=p.color==='gold'?'rgba(255,198,128,'+(fade*.84)+')':
    p.color==='ice'?'rgba(171,237,255,'+(fade*.77)+')':
    'rgba(108,197,239,'+(fade*.77)+')';
-  ctx.fillRect(p.x,p.y,p.r,p.r);
+  const size=p.r*(.4+.6*fade);
+   ctx.fillRect(p.x-size*.5,p.y-size*.5,size,size);
  }
  for(const r of interact.rings){
   const phase=1-r.life/r.ttl;

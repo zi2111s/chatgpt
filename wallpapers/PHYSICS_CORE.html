@@ -98,7 +98,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v3.2.2 — True Momentum and Stable Rest, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.2.3 — Exact Crystal Collision, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -252,6 +252,51 @@ function slingUp(){
  if(used)sling.ignore=performance.now()+500;
  refreshAim();
 }
+// V3.2.3: the solid painted crystal polygon IS the collision shape.
+// Neither the trail, glow, lock reticle, nor a proximity/shockwave radius scores.
+function rockOutline(m,t){
+ const n=m.shape.length,a=m.seed+t*m.spin,c=Math.cos(a),s=Math.sin(a);
+ const out=[];
+ for(let k=0;k<n;k++){
+  const theta=k*TAU/n,r=m.r*m.shape[k],x=Math.cos(theta)*r,y=Math.sin(theta)*r;
+  out.push({x:m.x+x*c-y*s,y:m.y+x*s+y*c});
+ }
+ return out;
+}
+function rockEdgesTouch(a,b,c,d){
+ // Two segments overlap iff their bounding boxes and orientations overlap.
+ const eps=1e-8;
+ if(Math.max(Math.min(a.x,b.x),Math.min(c.x,d.x))>
+       Math.min(Math.max(a.x,b.x),Math.max(c.x,d.x))+eps ||
+    Math.max(Math.min(a.y,b.y),Math.min(c.y,d.y))>
+       Math.min(Math.max(a.y,b.y),Math.max(c.y,d.y))+eps)return false;
+ const orient=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+ const x=orient(a,b,c),y=orient(a,b,d),u=orient(c,d,a),v=orient(c,d,b);
+ return x*y<=eps&&u*v<=eps;
+}
+function rockContainsPoint(p,poly){
+ let inside=false;
+ for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+  const a=poly[i],b=poly[j];
+  if(((a.y>p.y)!==(b.y>p.y))&&
+    p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)inside=!inside;
+ }
+ return inside;
+}
+function rocksActuallyTouch(a,b,t){
+ const ax=a.r*Math.max(...a.shape),bx=b.r*Math.max(...b.shape);
+ const dx=b.x-a.x,dy=b.y-a.y;
+ // Cheap guaranteed-safe circular rejection, never a collision criterion.
+ if(dx*dx+dy*dy>(ax+bx)*(ax+bx))return false;
+ const pa=rockOutline(a,t),pb=rockOutline(b,t);
+ for(let i=0;i<pa.length;i++){
+  const p=pa[i],q=pa[(i+1)%pa.length];
+  for(let j=0;j<pb.length;j++)
+   if(rockEdgesTouch(p,q,pb[j],pb[(j+1)%pb.length]))return true;
+ }
+ // One entire polygon may sit inside the other without crossed edges.
+ return rockContainsPoint(pa[0],pb)||rockContainsPoint(pb[0],pa);
+}
 function collidingMeteors(){
  const rocks=interact.meteors.filter(m=>m.state==='flying'&&m.age>.23);
  const used=new Set();
@@ -259,27 +304,29 @@ function collidingMeteors(){
   const a=rocks[i];if(a.state!=='flying'||used.has(a.id))continue;
   for(let j=i+1;j<rocks.length;j++){
    const b=rocks[j];if(b.state!=='flying'||used.has(b.id))continue;
-   const dx=b.x-a.x,dy=b.y-a.y,r=(a.r+b.r)*.92;
-   if(dx*dx+dy*dy>r*r||dx*(b.vx-a.vx)+dy*(b.vy-a.vy)>100)continue;
-   // One physical impact can propagate to neighbors, once per chain.
+   const dx=b.x-a.x,dy=b.y-a.y;
+   // No inferred impact: first two physical silhouettes must overlap.
+   if(!rocksActuallyTouch(a,b,now))continue;
+   if(dx*(b.vx-a.vx)+dy*(b.vy-a.vy)>100)continue;
    const chain=[a,b],ids=new Set([a.id,b.id]);
+   // Only a genuine connected set of overlapping painted rock polygons
+   // belongs to the same simultaneous collision; distance alone counts nothing.
    for(let k=0;k<chain.length;k++){
-    const focus=chain[k];
-    for(const other of rocks){
-     if(other.state!=='flying'||used.has(other.id)||ids.has(other.id))continue;
-     if(Math.hypot(other.x-focus.x,other.y-focus.y)<Math.max(78,focus.r+other.r+49)){
-      ids.add(other.id);chain.push(other);
+    const rock=chain[k];
+    for(const candidate of rocks){
+     if(candidate.state!=='flying'||used.has(candidate.id)||ids.has(candidate.id))continue;
+     if(rocksActuallyTouch(rock,candidate,now)){
+      ids.add(candidate.id);chain.push(candidate);
      }
     }
    }
    let x=0,y=0,gold=false;
    const player=chain.some(m=>m.slingTime>0);
-   for(const m of chain){x+=m.x;y+=m.y;gold ||=m.gold;}
+   for(const rock of chain){x+=rock.x;y+=rock.y;gold ||=rock.gold;}
    x/=chain.length;y/=chain.length;
    if(interact.rings.length>=RING_MAX)interact.rings.shift();
    interact.rings.push({x,y,base:18+5*chain.length,ttl:.7,life:.7,gold});
    for(const rock of chain){used.add(rock.id);shatterMeteor(rock);}
-   // No passive auto-scoring when the wallaper is unattended.
    if(player)addPoints(chain.length*100,chain.length,x,y);
    break;
   }

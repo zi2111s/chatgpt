@@ -98,7 +98,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v3.2.4 — Blue Ring Chain Shockwave, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.2.5 — Unrestricted Blue-Ring Chain Score, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -298,7 +298,35 @@ function rocksActuallyTouch(a,b,t){
  return rockContainsPoint(pa[0],pb)||rockContainsPoint(pb[0],pa);
 }
 // V3.2.4 — Promote an existing collision ring into a small visible shockwave.
-// Other rings retain the same look, but have no damage/score capability.
+// Every shatter ring gains an actual swept collision effect, regardless of input.
+// V3.2.5 — All existing blue/gold break rings can destroy further rocks.
+// One event follows all its linked shatters, even with no mouse activity.
+const chainEvents=new Map();
+let chainSerial=0;
+function beginChain(){
+ const c={id:++chainSerial,rockIds:new Set(),credited:0,last:now};
+ chainEvents.set(c.id,c);return c;
+}
+function fractureInChain(rock,chain){
+ if(!chain||!shatterMeteor(rock))return false;
+ rock.chainId=chain.id;chain.rockIds.add(rock.id);chain.last=now;
+ return true;
+}
+function awardChain(chain,x,y){
+ const count=chain.rockIds.size;
+ if(count<1)return;
+ const total=count===1?1:count*100;
+ if(total>chain.credited)
+  addPoints(total-chain.credited,count,x,y,total);
+ chain.credited=total;chain.last=now;
+}
+function pruneChains(){
+ for(const [id,chain] of chainEvents){
+  if(now-chain.last>6&&!interact.rings.some(r=>r.wave?.chainId===id))
+   chainEvents.delete(id);
+ }
+}
+
 function addImpactRing(r){
  if(interact.rings.length>=RING_MAX){
   const k=interact.rings.findIndex(q=>!q.wave?.enabled||q.wave.used||q.life<=0);
@@ -325,31 +353,31 @@ function shockwaveRockRange(m,x,y,t){
 function tickImpactRings(dt){
  for(let i=interact.rings.length-1;i>=0;i--){
   const ring=interact.rings[i];
-  const from=ringRadius(ring);
+  const previous=ringRadius(ring);
   ring.life=Math.max(0,ring.life-dt);
-  const to=ringRadius(ring),wave=ring.wave;
-  if(wave?.enabled&&!wave.used){
-   // Narrow swept ring front, not the whole disk inside it.
-   const half=(2.4*(ring.life/ring.ttl)+.4)*.5;
-   let hit=null,closest=Infinity;
-   for(const m of interact.meteors){
-    if(m.state!=='flying'||m.age<=.23||wave.hitIds.has(m.id))continue;
-    const range=shockwaveRockRange(m,ring.x,ring.y,now);
-    if(range.min<=to+half&&range.max>=from-half){
-     const delta=Math.abs(to-range.min);
-     if(delta<closest){closest=delta;hit=m;}
+  const radius=ringRadius(ring);
+  const wave=ring.wave;
+  if(wave?.enabled){
+   const chain=chainEvents.get(wave.chainId);
+   if(chain){
+    // The narrow swept visible annulus, not the entire circle's interior.
+    const halfWidth=(2.4*(ring.life/ring.ttl)+.4)*.5;
+    for(const rock of interact.meteors){
+     if(rock.state!=='flying'||rock.age<=.23||
+        chain.rockIds.has(rock.id)||wave.hitIds.has(rock.id))continue;
+     const range=shockwaveRockRange(rock,ring.x,ring.y,now);
+     if(range.min<=radius+halfWidth&&range.max>=previous-halfWidth){
+      wave.hitIds.add(rock.id);
+      if(fractureInChain(rock,chain))
+       awardChain(chain,rock.x,rock.y);
+     }
     }
-   }
-   if(hit&&shatterMeteor(hit)){
-    wave.used=true;wave.hitIds.add(hit.id);
-    // Two physical contacts +200, one wave-hit third +100, display +300.
-    addPoints(100,3,hit.x,hit.y,300);
    }
   }
   if(ring.life<=0)interact.rings.splice(i,1);
  }
+ pruneChains();
 }
-
 function collidingMeteors(){
  const rocks=interact.meteors.filter(m=>m.state==='flying'&&m.age>.23);
  const used=new Set();
@@ -358,33 +386,29 @@ function collidingMeteors(){
   for(let j=i+1;j<rocks.length;j++){
    const b=rocks[j];if(b.state!=='flying'||used.has(b.id))continue;
    const dx=b.x-a.x,dy=b.y-a.y;
-   // No inferred impact: first two physical silhouettes must overlap.
+   // Physical impact must be genuine polygon contact.
    if(!rocksActuallyTouch(a,b,now))continue;
    if(dx*(b.vx-a.vx)+dy*(b.vy-a.vy)>100)continue;
-   const chain=[a,b],ids=new Set([a.id,b.id]);
-   // Only a genuine connected set of overlapping painted rock polygons
-   // belongs to the same simultaneous collision; distance alone counts nothing.
-   for(let k=0;k<chain.length;k++){
-    const rock=chain[k];
-    for(const candidate of rocks){
-     if(candidate.state!=='flying'||used.has(candidate.id)||ids.has(candidate.id))continue;
-     if(rocksActuallyTouch(rock,candidate,now)){
-      ids.add(candidate.id);chain.push(candidate);
+   const group=[a,b],ids=new Set([a.id,b.id]);
+   for(let k=0;k<group.length;k++){
+    for(const other of rocks){
+     if(other.state!=='flying'||used.has(other.id)||ids.has(other.id))continue;
+     if(rocksActuallyTouch(group[k],other,now)){
+      ids.add(other.id);group.push(other);
      }
     }
    }
-   let x=0,y=0,gold=false;
-   const player=chain.some(m=>m.slingTime>0);
-   for(const rock of chain){x+=rock.x;y+=rock.y;gold ||=rock.gold;}
-   x/=chain.length;y/=chain.length;
-   // Existing impact-center ring; only player-driven two-rock impacts arm it.
-   addImpactRing({x,y,base:18+5*chain.length,ttl:.65,life:.65,gold,
-    wave:player&&chain.length===2?{
-     enabled:true,used:false,spread:30,source:'collision',
-     hitIds:new Set(chain.map(m=>m.id))
-    }:null});
-   for(const rock of chain){used.add(rock.id);shatterMeteor(rock);}
-   if(player)addPoints(chain.length*100,chain.length,x,y);
+   const chain=beginChain();let cx=0,cy=0,gold=false;
+   for(const rock of group){
+    used.add(rock.id);
+    cx+=rock.x;cy+=rock.y;gold ||=rock.gold;
+    fractureInChain(rock,chain);
+   }
+   cx/=group.length;cy/=group.length;
+   // The pre-existing collision-center ring can also damage anything it sweeps.
+   addImpactRing({x:cx,y:cy,base:18+5*group.length,ttl:.65,life:.65,gold,
+    wave:{enabled:true,spread:30,chainId:chain.id,hitIds:new Set(chain.rockIds)}});
+   awardChain(chain,cx,cy);
    break;
   }
  }
@@ -411,7 +435,7 @@ function paintSling(t){
 }
 
 let frameDelta=1/60;
-const METEOR_MAX=5,DUST_MAX=64,RING_MAX=3,CAPTURE_MAX=18;
+const METEOR_MAX=5,DUST_MAX=64,RING_MAX=16,CAPTURE_MAX=18;
 function meteorHit(x,y){
  if(!interact.on)return null;
  for(let i=interact.meteors.length-1;i>=0;i--){
@@ -431,6 +455,7 @@ function refreshAim(){
 function setMeteorMode(on){
  interact.on=typeof on==='boolean'?on:!interact.on;
  if(!interact.on){
+  chainEvents.clear();
   interact.meteors.length=0;interact.dust.length=0;interact.rings.length=0;
   interact.captured.length=0;interact.comet=null;interact.capturePulse=0;
   interact.hover=null;interact.coreResonance=0;
@@ -490,8 +515,9 @@ function releaseMeteorFragments(m){
    color:m.kind==='gold'?'gold':m.kind==='ice'?'ice':'dark'
   });
  }
- // Fragmentation rings still render normally but cannot chain.
- addImpactRing({x:m.x,y:m.y,base:m.r,life:.58,ttl:.58,gold:m.gold,wave:null});
+ // Every individual break ring remains visible and now physically breaks rocks.
+ addImpactRing({x:m.x,y:m.y,base:m.r,life:.58,ttl:.58,gold:m.gold,
+  wave:m.chainId?{enabled:true,spread:25,chainId:m.chainId,hitIds:new Set([m.id])}:null});
  if(m.gold){
   interact.coreSourceX=m.x;interact.coreSourceY=m.y;
   interact.coreResonance=Math.max(interact.coreResonance,.75);
@@ -1266,7 +1292,10 @@ addEventListener('click',e=>{
  if(!interact.on||e.button!==0||e.target?.closest?.('.interface,.perf-panel,.score-dock'))return;
  if(performance.now()<sling.ignore){sling.ignore=0;return;}
  const meteor=meteorHit(e.clientX,e.clientY);
- if(meteor&&shatterMeteor(meteor))addPoints(1,1,meteor.x,meteor.y);
+ if(meteor){
+  const chain=beginChain();
+  if(fractureInChain(meteor,chain))awardChain(chain,meteor.x,meteor.y);
+ }
 });
 addEventListener('visibilitychange',()=>{if(document.hidden)slingUp();pause=document.hidden;last=performance.now();perfMon.t0=0;perfMon.frames=0;perfMon.drawMs=0;perfMon.stutter=0;});
 

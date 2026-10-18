@@ -98,7 +98,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v3.2.1 — Persistent Slingshot Momentum, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.2.2 — True Momentum and Stable Rest, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -460,26 +460,27 @@ function tickInteraction(dt){
    }
   }
   if(!drawn){
+   // Velocity is real state. Never steer a stone back toward its launch velocity.
+   // Combo eligibility is a separate timer, not a movement state machine.
+   m.slingTime=Math.max(0,m.slingTime-dt);
    if(m.manipulated){
-    // The score combo timer is independent of the actual velocity state.
-    m.slingTime=Math.max(0,m.slingTime-dt);
     const drag=Math.exp(-dt*.11);
     m.vx*=drag;m.vy*=drag;
     if(Math.hypot(m.vx,m.vy)<.22){m.vx=0;m.vy=0;}
-   }else{
-    let tx=m.baseVx,ty=m.baseVy;
-    if(pointer.inside&&!sling.active){
-     const dx=pointer.x-m.x,dy=pointer.y-m.y,d=Math.hypot(dx,dy);
-     if(d>1&&d<190){const f=Math.pow(1-d/190,2);
-      tx+=dx/d*Math.min(8,f*9);ty+=dy/d*Math.min(8,f*9);}
+   } else if(pointer.inside&&!sling.active){
+    // Weak passive gravitation is a genuine, tiny acceleration, not a target speed.
+    const dx=pointer.x-m.x,dy=pointer.y-m.y,d=Math.hypot(dx,dy);
+    if(d>1&&d<190){
+     const f=Math.pow(1-d/190,2);
+     const accel=Math.min(8,f*9)*dt;
+     m.vx+=dx/d*accel;m.vy+=dy/d*accel;
     }
-    const smooth=1-Math.exp(-dt*1.2);
-    m.vx+=(tx-m.vx)*smooth;m.vy+=(ty-m.vy)*smooth;
    }
   }
   const slow=(pulling||m.manipulated)?1:1-.27*m.lock;
   m.x+=m.vx*dt*slow;m.y+=m.vy*dt*slow;m.age+=dt;
-  if(m.age>m.maxAge||m.x< -130||m.x>W+130||m.y< -130||m.y>H+130)
+  if((!m.manipulated&&m.age>m.maxAge)||
+      m.x< -130||m.x>W+130||m.y< -130||m.y>H+130)
    interact.meteors.splice(i,1);
  }
  collidingMeteors();

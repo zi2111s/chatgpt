@@ -98,7 +98,7 @@ background:rgba(2,12,25,.92);backdrop-filter:blur(10px);box-shadow:0 14px 50px #
 <script>
 (() => {
 'use strict';
-// PHYSICS CORE v3.2.3 — Exact Crystal Collision, offline-capable Wallpaper Engine web wallpaper.
+// PHYSICS CORE v3.2.4 — Blue Ring Chain Shockwave, offline-capable Wallpaper Engine web wallpaper.
 // Uses native WebGL + Canvas 2D, no CDN, no images, no third-party scripts.
 const canvas=document.getElementById('space');
 const overlay=document.getElementById('orbits');
@@ -170,14 +170,14 @@ function renderPoints(){
   row.append(left,right);history.appendChild(row);
  }
 }
-function addPoints(value,count,x,y){
+function addPoints(value,count,x,y,displayValue=value){
  if(!Number.isSafeInteger(value)||value<=0)return;
  points.total+=value;
  const key=hourBucket(new Date());
  if(!points.hours[key])points.hours[key]={value:0,time:Date.now()};
  points.hours[key].value+=value;points.hours[key].time=Date.now();
  if(count>=2)points.best=Math.max(points.best,count);
- points.popup={value,count,x,y,until:now+1.5};
+ points.popup={value:displayValue,count,x,y,until:now+1.5};
  savePoints();renderPoints();
 }
 function paintPoints(){
@@ -297,6 +297,59 @@ function rocksActuallyTouch(a,b,t){
  // One entire polygon may sit inside the other without crossed edges.
  return rockContainsPoint(pa[0],pb)||rockContainsPoint(pb[0],pa);
 }
+// V3.2.4 — Promote an existing collision ring into a small visible shockwave.
+// Other rings retain the same look, but have no damage/score capability.
+function addImpactRing(r){
+ if(interact.rings.length>=RING_MAX){
+  const k=interact.rings.findIndex(q=>!q.wave?.enabled||q.wave.used||q.life<=0);
+  if(k<0&&!r.wave?.enabled)return;
+  interact.rings.splice(k>=0?k:0,1);
+ }
+ interact.rings.push(r);
+}
+function ringRadius(r){
+ return r.base+clamp(1-r.life/r.ttl,0,1)*(r.wave?.spread??25);
+}
+function shockwaveRockRange(m,x,y,t){
+ const verts=rockOutline(m,t);let min=Infinity,max=0;
+ for(let i=0;i<verts.length;i++){
+  const a=verts[i],b=verts[(i+1)%verts.length];
+  const dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy;
+  const u=d2?clamp(((x-a.x)*dx+(y-a.y)*dy)/d2,0,1):0;
+  min=Math.min(min,Math.hypot(a.x+u*dx-x,a.y+u*dy-y));
+  max=Math.max(max,Math.hypot(a.x-x,a.y-y));
+ }
+ if(rockContainsPoint({x,y},verts))min=0;
+ return {min,max};
+}
+function tickImpactRings(dt){
+ for(let i=interact.rings.length-1;i>=0;i--){
+  const ring=interact.rings[i];
+  const from=ringRadius(ring);
+  ring.life=Math.max(0,ring.life-dt);
+  const to=ringRadius(ring),wave=ring.wave;
+  if(wave?.enabled&&!wave.used){
+   // Narrow swept ring front, not the whole disk inside it.
+   const half=(2.4*(ring.life/ring.ttl)+.4)*.5;
+   let hit=null,closest=Infinity;
+   for(const m of interact.meteors){
+    if(m.state!=='flying'||m.age<=.23||wave.hitIds.has(m.id))continue;
+    const range=shockwaveRockRange(m,ring.x,ring.y,now);
+    if(range.min<=to+half&&range.max>=from-half){
+     const delta=Math.abs(to-range.min);
+     if(delta<closest){closest=delta;hit=m;}
+    }
+   }
+   if(hit&&shatterMeteor(hit)){
+    wave.used=true;wave.hitIds.add(hit.id);
+    // Two physical contacts +200, one wave-hit third +100, display +300.
+    addPoints(100,3,hit.x,hit.y,300);
+   }
+  }
+  if(ring.life<=0)interact.rings.splice(i,1);
+ }
+}
+
 function collidingMeteors(){
  const rocks=interact.meteors.filter(m=>m.state==='flying'&&m.age>.23);
  const used=new Set();
@@ -324,8 +377,12 @@ function collidingMeteors(){
    const player=chain.some(m=>m.slingTime>0);
    for(const rock of chain){x+=rock.x;y+=rock.y;gold ||=rock.gold;}
    x/=chain.length;y/=chain.length;
-   if(interact.rings.length>=RING_MAX)interact.rings.shift();
-   interact.rings.push({x,y,base:18+5*chain.length,ttl:.7,life:.7,gold});
+   // Existing impact-center ring; only player-driven two-rock impacts arm it.
+   addImpactRing({x,y,base:18+5*chain.length,ttl:.65,life:.65,gold,
+    wave:player&&chain.length===2?{
+     enabled:true,used:false,spread:30,source:'collision',
+     hitIds:new Set(chain.map(m=>m.id))
+    }:null});
    for(const rock of chain){used.add(rock.id);shatterMeteor(rock);}
    if(player)addPoints(chain.length*100,chain.length,x,y);
    break;
@@ -433,8 +490,8 @@ function releaseMeteorFragments(m){
    color:m.kind==='gold'?'gold':m.kind==='ice'?'ice':'dark'
   });
  }
- if(interact.rings.length>=RING_MAX)interact.rings.shift();
- interact.rings.push({x:m.x,y:m.y,base:m.r,life:.58,ttl:.58,gold:m.gold});
+ // Fragmentation rings still render normally but cannot chain.
+ addImpactRing({x:m.x,y:m.y,base:m.r,life:.58,ttl:.58,gold:m.gold,wave:null});
  if(m.gold){
   interact.coreSourceX=m.x;interact.coreSourceY=m.y;
   interact.coreResonance=Math.max(interact.coreResonance,.75);
@@ -541,10 +598,7 @@ function tickInteraction(dt){
   p.x=inv*inv*p.startX+2*inv*u*p.controlX+u*u*p.endX;
   p.y=inv*inv*p.startY+2*inv*u*p.controlY+u*u*p.endY;
  }
- for(let i=interact.rings.length-1;i>=0;i--){
-  const r=interact.rings[i];r.life-=dt;
-  if(r.life<=0)interact.rings.splice(i,1);
- }
+ tickImpactRings(dt);
  refreshAim();
 }
 
@@ -754,8 +808,8 @@ function paintMeteors(t){
  for(const r of interact.rings){
   const phase=1-r.life/r.ttl;
   ctx.strokeStyle=r.gold?'rgba(255,203,130,'+(1-phase)*.34+')':'rgba(118,218,248,'+(1-phase)*.30+')';
-  ctx.lineWidth=1.4*(1-phase)+.3;ctx.beginPath();
-  ctx.arc(r.x,r.y,r.base+phase*25,0,TAU);ctx.stroke();
+  ctx.lineWidth=r.wave?.enabled?(2.4*(1-phase)+.4):(1.4*(1-phase)+.3);
+  ctx.beginPath();ctx.arc(r.x,r.y,ringRadius(r),0,TAU);ctx.stroke();
  }
  drawCaptured();
  // Only rare gold stones can briefly send a fine luminous thread to the core.
